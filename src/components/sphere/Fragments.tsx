@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { buildFragments } from "./buildFragments";
 import { fragmentsFrag, fragmentsVert, MAX_SHELLS } from "./shaders";
 import type { SphereLook, TierBudget } from "./config";
+import { useSphereStore } from "./sphereStore";
 
 export interface FragmentsProps {
   look: SphereLook;
@@ -34,6 +35,8 @@ function makeMaterialParams(): THREE.ShaderMaterialParameters {
       uLimb: { value: 0.6 },
       uPxWorld: { value: 0.001 },
       uMinPx: { value: 0.55 },
+      uAssemble: { value: 1 },
+      uShellCount: { value: 6 },
       uShellQuat: { value: quats },
       uShellBright: { value: bright },
       uColorBase: { value: new THREE.Color("#ffb23f") },
@@ -119,6 +122,8 @@ export default function Fragments({ look, budget, onBuilt, timeOffset = 0 }: Fra
     const step = Math.min(dt, 0.05);
     time.current = (time.current + step) % 3600;
     u.uTime.value = time.current;
+    u.uAssemble.value = useSphereStore.getState().assemble;
+    u.uShellCount.value = built.shells.length;
     const quats = u.uShellQuat.value as THREE.Vector4[];
     const q = tmpQ.current;
     built.shells.forEach((s, i) => {

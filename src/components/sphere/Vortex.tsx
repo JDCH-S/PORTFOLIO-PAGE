@@ -7,6 +7,7 @@ import { makeStripGeometry } from "./buildFragments";
 import { mulberry32 } from "./rng";
 import { vortexFrag, vortexVert } from "./shaders";
 import type { SphereLook, TierBudget } from "./config";
+import { useSphereStore } from "./sphereStore";
 
 function makeMaterialParams(): THREE.ShaderMaterialParameters {
   return {
@@ -20,6 +21,7 @@ function makeMaterialParams(): THREE.ShaderMaterialParameters {
       uBright: { value: 1.4 },
       uPxWorld: { value: 0.001 },
       uMinPx: { value: 0.55 },
+      uIgnite: { value: 1 },
       uColorBase: { value: new THREE.Color("#ffb23f") },
       uColorHot: { value: new THREE.Color("#fff3d6") },
       uIntensity: { value: 1.35 },
@@ -105,6 +107,7 @@ export default function Vortex({ look, budget, timeOffset = 0 }: { look: SphereL
     const u = m.uniforms;
     time.current = (time.current + Math.min(dt, 0.05)) % 3600;
     u.uTime.value = time.current;
+    u.uIgnite.value = useSphereStore.getState().ignite;
   });
 
   const mesh = useRef<THREE.Mesh>(null);

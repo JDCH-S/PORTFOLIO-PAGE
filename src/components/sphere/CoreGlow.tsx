@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { coreFrag, coreVert } from "./shaders";
 import type { SphereLook } from "./config";
+import { useSphereStore } from "./sphereStore";
 
 function makeMaterialParams(): THREE.ShaderMaterialParameters {
   return {
@@ -17,6 +18,7 @@ function makeMaterialParams(): THREE.ShaderMaterialParameters {
       uCoreFrac: { value: 0.16 },
       uHalo: { value: 0.22 },
       uBreathe: { value: 0.22 * Math.PI * 2 },
+      uIgnite: { value: 1 },
       uColorBase: { value: new THREE.Color("#ffb23f") },
       uColorHot: { value: new THREE.Color("#fff3d6") },
     },
@@ -55,6 +57,7 @@ export default function CoreGlow({ look, timeOffset = 0 }: { look: SphereLook; t
     const u = m.uniforms;
     time.current = (time.current + Math.min(dt, 0.05)) % 3600;
     u.uTime.value = time.current;
+    u.uIgnite.value = useSphereStore.getState().ignite;
   });
 
   return (

@@ -20,11 +20,30 @@ export interface SphereState {
   /** telemetry (updated about once per second) */
   fps: number;
   fragments: number;
+  tier: "high" | "medium" | "low" | "static";
+  /** true once the scene has rendered its first frames (or the static poster is what we show) */
+  ready: boolean;
+  /** intro: shells assembled (0..1, outer to inner), vortex ignition (0..1), sparks converged (0..1) */
+  assemble: number;
+  ignite: number;
+  converge: number;
+  /**
+   * Where the sphere should sit on screen, in CSS pixels (centre + diameter), or null for the
+   * default centred framing. The scene converts this into scale and offset targets.
+   */
+  frame: { x: number; y: number; size: number } | null;
+  /** the intro wants a black start: keep the loading poster hidden */
+  hidePoster: boolean;
   pulseToward: (x: number, y: number, strength?: number) => void;
   setScaleTarget: (s: number) => void;
   setOffsetTarget: (x: number, y: number) => void;
   setLeanTarget: (x: number, y: number) => void;
   setStats: (fps: number, fragments: number) => void;
+  setTier: (tier: "high" | "medium" | "low" | "static") => void;
+  setReady: (ready: boolean) => void;
+  setIntro: (v: Partial<{ assemble: number; ignite: number; converge: number }>) => void;
+  setFrame: (frame: { x: number; y: number; size: number } | null) => void;
+  setHidePoster: (hide: boolean) => void;
 }
 
 export const useSphereStore = create<SphereState>((set) => ({
@@ -35,9 +54,21 @@ export const useSphereStore = create<SphereState>((set) => ({
   leanTarget: [0, 0],
   fps: 0,
   fragments: 0,
+  tier: "high",
+  ready: false,
+  assemble: 1,
+  ignite: 1,
+  converge: 1,
+  frame: null,
+  hidePoster: false,
   pulseToward: (x, y, strength = 1) => set({ pulse: Math.min(1, strength), pulseDir: [x, y] }),
   setScaleTarget: (scaleTarget) => set({ scaleTarget }),
   setOffsetTarget: (x, y) => set({ offsetTarget: [x, y] }),
   setLeanTarget: (x, y) => set({ leanTarget: [x, y] }),
   setStats: (fps, fragments) => set((s) => (s.fps === fps && s.fragments === fragments ? s : { fps, fragments })),
+  setTier: (tier) => set({ tier }),
+  setReady: (ready) => set({ ready }),
+  setIntro: (v) => set(v),
+  setFrame: (frame) => set({ frame }),
+  setHidePoster: (hidePoster) => set({ hidePoster }),
 }));

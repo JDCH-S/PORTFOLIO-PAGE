@@ -20,6 +20,8 @@ export const fragmentsVert = /* glsl */ `
   uniform float uLimb;
   uniform float uPxWorld;     // world units per pixel at distance 1
   uniform float uMinPx;       // minimum on-screen half width in pixels
+  uniform float uAssemble;    // intro: 0 scattered .. 1 assembled (outer shells first)
+  uniform float uShellCount;
   uniform vec4 uShellQuat[${MAX_SHELLS}];
   uniform float uShellBright[${MAX_SHELLS}];
 
@@ -60,9 +62,16 @@ export const fragmentsVert = /* glsl */ `
     float r = iParams.x + drift;
     float w = iParams.z * uWidth;
 
+    // intro assembly: each shell flies in from far outside, outer shells first
+    float order = (uShellCount - 1.0 - float(shell)) / max(uShellCount, 1.0);
+    float aStart = order * 0.65;
+    float assembled = smoothstep(aStart, aStart + 0.35, uAssemble);
+    float asmEase = 1.0 - pow(1.0 - assembled, 3.0);
+    vec3 scatterDir = normalize(vec3(hash11(iParams.w * 3.1) - 0.5, hash11(iParams.w * 5.7) - 0.5, hash11(iParams.w * 9.3) - 0.5) + 1e-3);
+    vec3 scatter = scatterDir * (2.4 + 1.6 * hash11(iParams.w * 13.7));
     // centre line of the strip, then extrude across it in view space so thin arcs
     // never vanish edge-on (arcs face the camera, shards lie flat on the shell)
-    vec3 centre = qrot(q, p * r + tp * drift * 0.6);
+    vec3 centre = mix(scatter, qrot(q, p * r + tp * drift * 0.6), asmEase);
     vec3 tanW = qrot(q, tp);
     vec3 flatW = qrot(q, bn);
     vec4 cv4 = modelViewMatrix * vec4(centre, 1.0);
@@ -92,7 +101,8 @@ export const fragmentsVert = /* glsl */ `
     // arcs whose circle plane contains the view direction project as straight chords: fade them
     float planeFacing = abs(dot(normalize((modelViewMatrix * vec4(qrot(q, A), 0.0)).xyz), normalize(-cv)));
     float chordFade = iStyle.x < 0.5 ? mix(0.5, 1.0, planeFacing) : 1.0;
-    vBright = min(iStyle.y * uShellBright[shell] * flick * (depth + limb) * chordFade * (1.0 - drift * 1.5), 2.4);
+    float asmFlash = assembled * (1.0 + 0.9 * sin(assembled * 3.14159));   // a bright arrival flash
+    vBright = min(iStyle.y * uShellBright[shell] * flick * (depth + limb) * chordFade * (1.0 - drift * 1.5), 2.4) * asmFlash;
     vUvw = vec2(t, side);
     vType = iStyle.x;
     vRadial = iParams.x;
@@ -154,6 +164,7 @@ export const vortexVert = /* glsl */ `
   uniform float uBright;
   uniform float uPxWorld;
   uniform float uMinPx;
+  uniform float uIgnite;  // intro: 0 dark .. 1 lit
 
   attribute vec4 iRib;   // phase, radius scale, seed, width
   attribute vec4 iQuat;  // ribbon orientation
@@ -202,7 +213,8 @@ export const vortexVert = /* glsl */ `
     float flow = 0.7 + 0.3 * sin(t * 22.0 - uTime * 5.5 + seed * 12.0);
     float shimmer = 0.75 + 0.25 * noise1(uTime * 2.0 + seed * 40.0);
     float profile = iKind > 0.5 ? 0.55 : (0.4 + 1.0 * t * t);      // spirals brightest at the core
-    vGlow = min(uBright * flow * shimmer * profile * (1.0 + packet), 2.0);
+    float ignite = smoothstep(0.0, 1.0, uIgnite) * (1.0 + 1.2 * sin(clamp(uIgnite, 0.0, 1.0) * 3.14159));
+    vGlow = min(uBright * flow * shimmer * profile * (1.0 + packet), 2.0) * ignite;
     vUvw = vec2(t, side);
     vKind = iKind;
     gl_Position = projectionMatrix * vec4(posV, 1.0);
@@ -250,6 +262,7 @@ export const coreFrag = /* glsl */ `
   uniform float uCoreFrac;   // hot core radius as a fraction of the quad half-size
   uniform float uHalo;       // ambient halo strength
   uniform float uBreathe;    // breathing angular speed, shared with the rig
+  uniform float uIgnite;     // intro: 0 dark .. 1 lit
   uniform vec3 uColorBase;
   uniform vec3 uColorHot;
   varying vec2 vUv;
@@ -263,7 +276,8 @@ export const coreFrag = /* glsl */ `
     float dc = d / max(uCoreFrac, 0.01);
     float hot = (exp(-dc * dc * 2.2) * 1.4 + exp(-dc * dc * 0.5) * 0.5) * rays;
     float halo = uHalo * exp(-d * d * 3.0);
-    float g = (hot * pulse + halo) * uBright;
+    float ignite = smoothstep(0.0, 1.0, uIgnite) * (1.0 + 1.5 * sin(clamp(uIgnite, 0.0, 1.0) * 3.14159));
+    float g = (hot * pulse + halo) * uBright * ignite;
     vec3 col = mix(uColorBase, uColorHot, clamp(hot * 0.6, 0.0, 1.0));
     gl_FragColor = vec4(col * g, clamp(g, 0.0, 1.0));
   }
@@ -276,6 +290,7 @@ export const particlesVert = /* glsl */ `
   uniform float uSize;
   uniform float uSpeed;
   uniform float uPixelRatio;
+  uniform float uConverge;  // intro: 0 scattered at the edges .. 1 in place
   attribute vec3 aSeed;
   attribute float aKind;   // 0 dust, 1 spark
   varying float vBright;
@@ -289,11 +304,17 @@ export const particlesVert = /* glsl */ `
     float cs = cos(orb), sn = sin(orb);
     p.xz = mat2(cs, -sn, sn, cs) * p.xz;
     p += 0.08 * vec3(sin(t * 0.7 + aSeed.x * 20.0), sin(t * 0.5 + aSeed.y * 20.0), sin(t * 0.6 + aSeed.z * 20.0));
+    // intro: drift in from far outside, each spark on its own schedule
+    float cStart = aSeed.x * 0.5;
+    float cv = smoothstep(cStart, cStart + 0.5, uConverge);
+    cv = 1.0 - pow(1.0 - cv, 2.0);
+    vec3 far = normalize(p + vec3(aSeed.y - 0.5, aSeed.z - 0.5, aSeed.x - 0.5)) * (3.0 + 2.5 * aSeed.z);
+    p = mix(far, p, cv);
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     float n = noise1(t * 2.5 + aSeed.y * 50.0);
     float spark = pow(noise1(t * 3.0 + aSeed.z * 70.0), 18.0) * 2.2;
     float outside = 1.0 - 0.5 * smoothstep(1.0, 1.5, length(position));
-    vBright = min(mix(0.25 + 0.75 * n, 0.15 + spark, aKind), 2.0) * outside;
+    vBright = min(mix(0.25 + 0.75 * n, 0.15 + spark, aKind), 2.0) * outside * (0.6 + 0.4 * cv);
     vKind = aKind;
     float size = mix(1.2, 2.2, aSeed.z) * uSize * uPixelRatio * (1.0 + spark * 0.12);
     gl_PointSize = min(size * (5.0 / max(-mv.z, 2.0)), 3.2 * uPixelRatio);

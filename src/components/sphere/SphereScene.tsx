@@ -29,6 +29,7 @@ declare global {
   interface Window {
     __sphereReady?: boolean;
     __sphereStats?: Record<string, unknown>;
+    __sphereStore?: typeof useSphereStore;
   }
 }
 
@@ -93,6 +94,29 @@ function VisibilityGate({ enabled }: { enabled: boolean }) {
   return null;
 }
 
+/**
+ * Converts the store's screen-space frame (centre + diameter in CSS px) into the rig's
+ * scale and offset targets. CameraFit puts radius 1 at fill * min(w, h) / 2 pixels.
+ */
+function SphereFraming() {
+  const size = useThree((s) => s.size);
+  const frame = useSphereStore((s) => s.frame);
+  useEffect(() => {
+    const st = useSphereStore.getState();
+    if (!frame) {
+      st.setScaleTarget(1);
+      st.setOffsetTarget(0, 0);
+      return;
+    }
+    const aspect = size.width / Math.max(1, size.height);
+    const fill = aspect < 0.8 ? 0.88 : 0.72;
+    const rPx = (fill * Math.min(size.width, size.height)) / 2;
+    st.setScaleTarget(Math.max(0.05, frame.size / 2 / rPx));
+    st.setOffsetTarget((frame.x - size.width / 2) / rPx, (size.height / 2 - frame.y) / rPx);
+  }, [frame, size.width, size.height]);
+  return null;
+}
+
 /** Show the poster while the GL context is lost; the renderer rebuilds itself on restore. */
 function ContextGuard({ onLost, onRestored }: { onLost: () => void; onRestored: () => void }) {
   const gl = useThree((s) => s.gl);
@@ -128,6 +152,7 @@ function Telemetry({ tier, onReady }: { tier: Tier; onReady: () => void }) {
     total.current++;
     if (total.current === 2) {
       window.__sphereReady = true;
+      useSphereStore.getState().setReady(true);
       onReady();
     }
     frames.current++;
@@ -207,12 +232,23 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
 
   const [tier, setTier] = useState<Tier>(initialTier);
   const budget = TIER_BUDGETS[tier];
+  useEffect(() => {
+    useSphereStore.getState().setTier(tier);
+  }, [tier]);
+  useEffect(() => {
+    // handle for the screenshot harness and for tuning from the console
+    window.__sphereStore = useSphereStore;
+    return () => {
+      delete window.__sphereStore;
+    };
+  }, []);
   const onBuilt = useCallback((n: number) => {
     const store = useSphereStore.getState();
     store.setStats(store.fps, n);
   }, []);
   const [visible, setVisible] = useState(false);
   const onReady = useCallback(() => setVisible(true), []);
+  const hidePoster = useSphereStore((s) => s.hidePoster);
   // runtime regression: if frames drop, lower the pixel ratio, then the tier
   const [dprScale, setDprScale] = useState(1);
   const onDecline = useCallback(() => setDprScale((s) => Math.max(0.6, s * 0.8)), []);
@@ -239,7 +275,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
 
   return (
     <div className={`absolute inset-0 ${className}`} data-tier={tier}>
-      <div className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible ? "opacity-0" : "opacity-100"}`} aria-hidden>
+      <div className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible || hidePoster ? "opacity-0" : "opacity-100"}`} aria-hidden>
         <StaticSphere loading />
       </div>
       <div className={`absolute inset-0 mix-blend-screen transition-opacity duration-700 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
@@ -257,6 +293,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
           }}
         >
           <CameraFit />
+          <SphereFraming />
           <ContextGuard onLost={onLost} onRestored={onRestored} />
           {!pinned && monitor ? <PerformanceMonitor bounds={monitorBounds} flipflops={3} onDecline={onDecline} onFallback={onFallback} /> : null}
           <Suspense fallback={null}>
@@ -274,7 +311,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
         </Canvas>
       </div>
       {showDebug ? <DebugPanel tier={tier} initialLook={initialLook} onLook={setLook} onTier={setTier} /> : null}
-      {!captureMode ? <Caption tier={tier} /> : null}
+      {showDebug ? <Caption tier={tier} /> : null}
     </div>
   );
 }

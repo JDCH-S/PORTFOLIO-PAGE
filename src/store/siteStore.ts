@@ -24,6 +24,9 @@ export interface SiteState {
   openItem: (id: string) => void;
   closeItem: () => void;
   setHover: (id: string | null) => void;
+  /** DOM anchors modules register so beams and the sphere lean can find them */
+  anchors: Partial<Record<ModuleId, HTMLElement | null>>;
+  setAnchor: (id: ModuleId, el: HTMLElement | null) => void;
 }
 
 export const useSiteStore = create<SiteState>((set) => ({
@@ -40,4 +43,6 @@ export const useSiteStore = create<SiteState>((set) => ({
   openItem: (activeItem) => set({ activeItem, phase: "detail" }),
   closeItem: () => set({ activeItem: null, phase: "idle" }),
   setHover: (hover) => set({ hover }),
+  anchors: {},
+  setAnchor: (id, el) => set((s) => ({ anchors: { ...s.anchors, [id]: el } })),
 }));

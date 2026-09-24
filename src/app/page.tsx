@@ -1,9 +1,5 @@
-import SphereStage from "@/components/sphere/SphereStage";
+import Site from "@/components/site/Site";
 
 export default function Home() {
-  return (
-    <main className="relative h-dvh w-full overflow-hidden bg-bg">
-      <SphereStage debug />
-    </main>
-  );
+  return <Site />;
 }

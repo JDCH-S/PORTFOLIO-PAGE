@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { mulberry32 } from "./rng";
 import { particlesFrag, particlesVert } from "./shaders";
 import type { SphereLook, TierBudget } from "./config";
+import { useSphereStore } from "./sphereStore";
 
 function makeMaterialParams(): THREE.ShaderMaterialParameters {
   return {
@@ -16,6 +17,7 @@ function makeMaterialParams(): THREE.ShaderMaterialParameters {
       uSize: { value: 1 },
       uSpeed: { value: 1 },
       uPixelRatio: { value: 1 },
+      uConverge: { value: 1 },
       uColorBase: { value: new THREE.Color("#ffb23f") },
       uColorHot: { value: new THREE.Color("#fff3d6") },
       uIntensity: { value: 1 },
@@ -83,6 +85,7 @@ export default function Particles({ look, budget, timeOffset = 0 }: { look: Sphe
     const u = m.uniforms;
     time.current = (time.current + Math.min(dt, 0.05)) % 3600;
     u.uTime.value = time.current;
+    u.uConverge.value = useSphereStore.getState().converge;
   });
 
   return (
