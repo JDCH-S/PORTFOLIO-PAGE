@@ -1,8 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
-import { detectCapabilities, tierOverrideFromUrl, type Capabilities } from "@/lib/tier";
+import { useMemo, useSyncExternalStore } from "react";
+import { detectCapabilities, tierOverrideFromUrl } from "@/lib/tier";
 import StaticSphere from "./StaticSphere";
 
 // The 3D scene is client-only and lazy: the page is usable before it loads.
@@ -17,14 +17,18 @@ export interface SphereStageProps {
   className?: string;
 }
 
-export default function SphereStage({ debug = false, className }: SphereStageProps) {
-  const [caps, setCaps] = useState<Capabilities | null>(null);
+const noopSubscribe = () => () => {};
 
-  useEffect(() => {
+export default function SphereStage({ debug = false, className }: SphereStageProps) {
+  // false during SSR and hydration, true once mounted on the client
+  const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
+
+  const caps = useMemo(() => {
+    if (!mounted) return null;
     const detected = detectCapabilities();
     const override = tierOverrideFromUrl();
-    setCaps(override ? { ...detected, tier: override } : detected);
-  }, []);
+    return override ? { ...detected, tier: override } : detected;
+  }, [mounted]);
 
   // Before hydration / detection: show the static emblem so there is never a blank hero.
   if (!caps) return <StaticSphere loading className={className} />;

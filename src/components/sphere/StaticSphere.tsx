@@ -1,8 +1,10 @@
 /**
  * Static fallback for the holographic sphere: used before the 3D scene loads,
  * for prefers-reduced-motion, and when WebGL is unavailable.
- * The PNG is a real capture of the sphere; the CSS glow behind it keeps the
- * hero alive even if the image has not arrived yet.
+ * The image is a real capture of the sphere's light on black; blended with
+ * `screen` it composites additively over any dark page background, exactly
+ * like the live render. The CSS glow behind it keeps the hero alive even
+ * before the image arrives.
  */
 export default function StaticSphere({
   loading = false,
@@ -20,26 +22,31 @@ export default function StaticSphere({
       data-sphere-static={loading ? "loading" : "fallback"}
     >
       <div
-        className="relative aspect-square w-[min(72vmin,720px)]"
+        className="relative aspect-square w-[min(100vmin,1000px)]"
         style={{
           background:
-            "radial-gradient(circle at 50% 50%, rgba(255,241,207,0.55) 0%, rgba(255,178,63,0.35) 18%, rgba(255,106,0,0.12) 42%, rgba(255,106,0,0) 62%)",
+            "radial-gradient(circle at 50% 50%, rgba(255,241,207,0.5) 0%, rgba(255,178,63,0.3) 12%, rgba(255,106,0,0.1) 30%, rgba(255,106,0,0) 46%)",
           filter: loading ? "blur(6px)" : "none",
-          opacity: loading ? 0.6 : 1,
+          opacity: loading ? 0.65 : 1,
           transition: "opacity 600ms ease, filter 600ms ease",
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element -- static asset, sized by container */}
-        <img
-          src="/sphere-static.png"
-          alt=""
-          decoding="async"
-          loading="eager"
-          className="absolute inset-0 h-full w-full object-contain"
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).style.display = "none";
-          }}
-        />
+        <picture>
+          <source srcSet="/sphere-static.webp" type="image/webp" />
+          <img
+            src="/sphere-static.png"
+            alt=""
+            width={800}
+            height={800}
+            decoding="async"
+            loading="eager"
+            fetchPriority={loading ? "low" : "high"}
+            className="absolute inset-0 h-full w-full object-contain mix-blend-screen"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+          />
+        </picture>
       </div>
     </div>
   );
