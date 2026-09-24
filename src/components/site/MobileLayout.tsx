@@ -83,7 +83,7 @@ export default function MobileLayout() {
         style={{ opacity: step >= 2 ? 1 : 0, paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
         <div className="flex items-center gap-3 px-4 py-2">
-          <div ref={emblem} aria-hidden className="h-10 w-10 shrink-0" />
+          <div ref={emblem} data-emblem aria-hidden className="h-10 w-10 shrink-0" />
           <div className="min-w-0 flex-1">
             <Decode as="h1" text={profile.name.toUpperCase()} active={step >= 3} reduced={reduced} className="truncate font-display text-[15px] leading-[20px] font-semibold tracking-[0.06em] text-gold-hot" />
             <p className="label truncate text-steel">{profile.role}</p>

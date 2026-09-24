@@ -19,6 +19,7 @@ export default function Site() {
   const mounted = useSyncExternalStore(noop, () => true, () => false);
   const isDesktop = useIsDesktop();
   const reduced = useReducedMotion();
+  // while an item is open the parked sphere rises above the detail backdrop (corner on desktop, header emblem on mobile)
   const detail = useSiteStore((s) => s.phase) === "detail";
   return (
     <main className="relative">

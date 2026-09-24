@@ -35,7 +35,16 @@ export default function DetailView() {
     if (!item) return;
     lastFocus.current = document.activeElement as HTMLElement | null;
     const sphere = useSphereStore.getState();
-    if (isDesktop) sphere.setFrame({ x: 60, y: 60, size: 76 });
+    if (isDesktop) {
+      sphere.setFrame({ x: 60, y: 60, size: 76 });
+    } else {
+      // shrink into the header emblem, which stays visible above the sheet
+      const emblem = document.querySelector<HTMLElement>("[data-emblem]");
+      if (emblem) {
+        const r = emblem.getBoundingClientRect();
+        sphere.setFrame({ x: r.left + r.width / 2, y: r.top + r.height / 2, size: r.width });
+      }
+    }
     sphere.setLeanTarget(0, 0);
     document.body.style.overflow = "hidden";
     const focusFirst = window.setTimeout(() => panel.current?.querySelector<HTMLElement>("button")?.focus(), 30);
@@ -82,7 +91,7 @@ export default function DetailView() {
           exit={{ opacity: 0 }}
           transition={{ duration: reduced ? 0.2 : 0.3 }}
         >
-          <button type="button" aria-label="Close" onClick={closeItem} className="absolute inset-0 h-full w-full cursor-default bg-bg/70 backdrop-blur-[2px]" />
+          <button type="button" aria-label="Close" onClick={closeItem} className="absolute inset-0 h-full w-full cursor-default bg-bg/70" />
           {isDesktop ? (
             <motion.div
               ref={panel}

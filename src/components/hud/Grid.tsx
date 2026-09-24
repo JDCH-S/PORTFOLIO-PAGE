@@ -12,11 +12,11 @@ export default function Grid() {
       className="pointer-events-none fixed inset-0 z-0 overflow-hidden transition-opacity duration-[900ms] ease-[var(--ease-out)]"
       style={{ opacity: on ? 1 : 0 }}
     >
-      {/* perspective floor */}
+      {/* perspective floor: near edge at the bottom of the screen, receding to a horizon */}
       <div
-        className="absolute left-1/2 top-[52%] h-[140vh] w-[260vw] -translate-x-1/2"
+        className="absolute left-1/2 top-[50%] h-[140vh] w-[260vw] -translate-x-1/2"
         style={{
-          transform: "translateX(-50%) perspective(900px) rotateX(74deg)",
+          transform: "translateX(-50%) perspective(900px) rotateX(-74deg)",
           transformOrigin: "50% 0%",
           backgroundImage: "linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px)",
           backgroundSize: "64px 64px",
@@ -26,9 +26,9 @@ export default function Grid() {
       />
       {/* ceiling grid, fainter */}
       <div
-        className="absolute left-1/2 top-[-40vh] h-[90vh] w-[260vw] -translate-x-1/2"
+        className="absolute left-1/2 bottom-[50%] h-[140vh] w-[260vw] -translate-x-1/2"
         style={{
-          transform: "translateX(-50%) perspective(900px) rotateX(-74deg)",
+          transform: "translateX(-50%) perspective(900px) rotateX(74deg)",
           transformOrigin: "50% 100%",
           backgroundImage: "linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px)",
           backgroundSize: "64px 64px",

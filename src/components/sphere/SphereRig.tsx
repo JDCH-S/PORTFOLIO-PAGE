@@ -71,7 +71,8 @@ export default function SphereRig({ look, coarsePointer, timeOffset = 0, childre
   useFrame((_, dt) => {
     const g = group.current;
     if (!g) return;
-    const step = Math.min(dt, 0.05);
+    const step = Math.min(dt, 0.05);       // simulation time (breathing)
+    const real = Math.min(dt, 0.25);       // wall-clock for damping, so slow devices still converge
     time.current += step;
     const cur = curRef.current;
     const store = useSphereStore.getState();
@@ -85,28 +86,28 @@ export default function SphereRig({ look, coarsePointer, timeOffset = 0, childre
     }
     if (coarsePointer && !drag.current.active) {
       // spring back gently after a drag on touch devices
-      target.current.x = THREE.MathUtils.damp(target.current.x, orient.current.has ? orient.current.x : 0, 1.2, step);
-      target.current.y = THREE.MathUtils.damp(target.current.y, orient.current.has ? orient.current.y : 0, 1.2, step);
+      target.current.x = THREE.MathUtils.damp(target.current.x, orient.current.has ? orient.current.x : 0, 1.2, real);
+      target.current.y = THREE.MathUtils.damp(target.current.y, orient.current.has ? orient.current.y : 0, 1.2, real);
     }
     const lean = store.leanTarget;
     const pulse = store.pulse;
     const wantRy = (tx * 0.32 + lean[0] * 0.25 + store.pulseDir[0] * pulse * 0.2) * look.tilt;
     const wantRx = (ty * 0.22 + lean[1] * 0.18 + store.pulseDir[1] * pulse * 0.15) * look.tilt;
-    cur.ry = THREE.MathUtils.damp(cur.ry, wantRy, 3.2, step);
-    cur.rx = THREE.MathUtils.damp(cur.rx, wantRx, 3.2, step);
+    cur.ry = THREE.MathUtils.damp(cur.ry, wantRy, 3.2, real);
+    cur.rx = THREE.MathUtils.damp(cur.rx, wantRx, 3.2, real);
     g.rotation.set(cur.rx, cur.ry, 0);
 
     // breathing + pulse
     const breathe = 1 + Math.sin(time.current * look.breatheSpeed * Math.PI * 2) * look.breatheAmount;
     const wantScale = store.scaleTarget * breathe * (1 + pulse * 0.06);
-    cur.scale = THREE.MathUtils.damp(cur.scale, wantScale, 6, step);
+    cur.scale = THREE.MathUtils.damp(cur.scale, wantScale, 6, real);
     g.scale.setScalar(cur.scale);
 
-    cur.ox = THREE.MathUtils.damp(cur.ox, store.offsetTarget[0], 4, step);
-    cur.oy = THREE.MathUtils.damp(cur.oy, store.offsetTarget[1], 4, step);
+    cur.ox = THREE.MathUtils.damp(cur.ox, store.offsetTarget[0], 4, real);
+    cur.oy = THREE.MathUtils.damp(cur.oy, store.offsetTarget[1], 4, real);
     g.position.set(cur.ox, cur.oy, 0);
 
-    if (pulse > 0.001) useSphereStore.setState({ pulse: pulse * Math.exp(-step * 2.4) });
+    if (pulse > 0.001) useSphereStore.setState({ pulse: pulse * Math.exp(-real * 2.4) });
   });
 
   return <group ref={group}>{children}</group>;
