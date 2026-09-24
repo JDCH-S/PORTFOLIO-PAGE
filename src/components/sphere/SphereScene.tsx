@@ -63,39 +63,36 @@ function setInfoAutoReset(gl: import("three").WebGLRenderer, value: boolean) {
  * Mounted last inside the Canvas: compiles the scene's shader programs in parallel
  * (KHR_parallel_shader_compile) before the render loop starts, so the first frame
  * does not stall the page. Falls through after a short timeout regardless.
+ * The frameloop itself is React state on the scene (the Canvas prop is re-applied on
+ * every re-render, so a store-level setFrameloop would be undone).
  */
-function Warmup() {
+function Warmup({ onWarm }: { onWarm: () => void }) {
   const gl = useThree((s) => s.gl);
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera);
-  const setFrameloop = useThree((s) => s.setFrameloop);
   useEffect(() => {
     let done = false;
     const start = () => {
       if (done) return;
       done = true;
-      setFrameloop("always");
+      onWarm();
     };
     const timer = setTimeout(start, 1500);
     gl.compileAsync(scene, camera).then(start, start);
     return () => clearTimeout(timer);
-  }, [gl, scene, camera, setFrameloop]);
+  }, [gl, scene, camera, onWarm]);
   return null;
 }
 
-/** Pauses the render loop while the canvas is scrolled out of view. */
-function VisibilityGate({ enabled }: { enabled: boolean }) {
+/** Reports whether the canvas is in view, so the loop can pause while it is scrolled away. */
+function VisibilityGate({ enabled, onChange }: { enabled: boolean; onChange: (inView: boolean) => void }) {
   const gl = useThree((s) => s.gl);
-  const setFrameloop = useThree((s) => s.setFrameloop);
   useEffect(() => {
     if (!enabled || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(
-      ([entry]) => setFrameloop(entry.isIntersecting ? "always" : "never"),
-      { threshold: 0.05 },
-    );
+    const io = new IntersectionObserver(([entry]) => onChange(entry.isIntersecting), { threshold: 0.05 });
     io.observe(gl.domElement);
     return () => io.disconnect();
-  }, [enabled, gl, setFrameloop]);
+  }, [enabled, gl, onChange]);
   return null;
 }
 
@@ -254,6 +251,12 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   const [visible, setVisible] = useState(false);
   const onReady = useCallback(() => setVisible(true), []);
   const hidePoster = useSphereStore((s) => s.hidePoster);
+  // render loop: off until the shaders are warm, then follows the canvas's visibility
+  const [warm, setWarm] = useState(false);
+  const [inView, setInView] = useState(true);
+  const onWarm = useCallback(() => setWarm(true), []);
+  const onInView = useCallback((v: boolean) => setInView(v), []);
+  const frameloop = warm && inView ? "always" : "never";
   // runtime regression: if frames drop, lower the pixel ratio, then the tier
   const [dprScale, setDprScale] = useState(1);
   const onDecline = useCallback(() => setDprScale((s) => Math.max(0.6, s * 0.8)), []);
@@ -289,7 +292,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
           camera={{ fov: 40, near: 0.1, far: 50, position: [0, 0, 3.8] }}
           gl={{ antialias: false, alpha: false, powerPreference: "high-performance", stencil: false, depth: false }}
           flat
-          frameloop="never"
+          frameloop={frameloop}
           style={{ background: "transparent" }}
           onCreated={({ gl }) => {
             // cleared to pure black and screen-blended over the page: screen(bg, black) = bg, so
@@ -311,8 +314,8 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
             <Effects look={look} budget={budget} />
           </Suspense>
           <Telemetry tier={tier} onReady={onReady} />
-          <VisibilityGate enabled={visible} />
-          <Warmup />
+          <VisibilityGate enabled={visible} onChange={onInView} />
+          <Warmup onWarm={onWarm} />
         </Canvas>
       </div>
       {showDebug ? <DebugPanel tier={tier} initialLook={initialLook} onLook={setLook} onTier={setTier} /> : null}

@@ -36,7 +36,8 @@ export default function DetailView() {
     lastFocus.current = document.activeElement as HTMLElement | null;
     const sphere = useSphereStore.getState();
     if (isDesktop) {
-      sphere.setFrame({ x: 60, y: 60, size: 76 });
+      // the left margin beside the overlay, below the header row
+      sphere.setFrame({ x: Math.max(48, window.innerWidth * 0.04), y: window.innerHeight * 0.09 + 56, size: 76 });
     } else {
       // shrink into the header emblem, which stays visible above the sheet
       const emblem = document.querySelector<HTMLElement>("[data-emblem]");

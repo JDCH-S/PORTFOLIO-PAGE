@@ -46,10 +46,11 @@ Useful query parameters while reviewing (they work on `/` and `/sphere`):
   (`DesktopLayout` from 1024px, `MobileLayout` below).
 - The UI tells the sphere where to sit through a screen-space frame in `sphereStore.ts`
   (`SphereSlot` on desktop, the hero and header emblem on mobile, the corner in the detail view).
-- `IntroSequence.tsx` runs `src/lib/sequence.ts`: sparks converge, shells assemble outer to inner,
-  the vortex ignites, `INITIALISING` types, the name decodes, beams draw, modules materialise,
-  items stagger. Skippable; remembered in localStorage; a 1s version on later visits; no intro
-  with reduced motion.
+- The page opens on the hologram alone. `IntroSequence.tsx` runs `src/lib/sequence.ts`: sparks
+  converge, shells assemble outer to inner, the vortex ignites, `INITIALISING` types, the name
+  decodes. Skippable; remembered in localStorage; a 1s version on later visits; no intro with
+  reduced motion. Clicking the sphere (or a nav label, or Enter) opens the core: `Emergence.tsx`
+  draws the beams and materialises the modules; Esc or the **core** control collapses them.
 - `components/modules/*` render the three modules from `content.ts`; `ItemButton` handles hover,
   focus and the click that fires the fragment stream and opens `components/detail/DetailView`.
 

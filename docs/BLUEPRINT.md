@@ -71,6 +71,14 @@ small 14/22 · body 16/26 · h3 20/28 (display) · h2 28/34 (display) · h1 40/4
   easing out `cubic-bezier(.2,.8,.2,1)`, in-out `cubic-bezier(.65,0,.35,1)`; stagger 60ms;
   `prefers-reduced-motion` removes all movement and keeps opacity fades ≤ 240ms.
 
+## 2.4 The core is the default view
+
+The page opens on the hologram alone: the sphere, the name, the corner nav and a
+"enter the core" prompt. Nothing else is on screen. Clicking or tapping the sphere (or a
+nav label, or Enter) pulses the core, draws the beams and materialises the three modules
+around it; Esc or the **core** control collapses everything back to the lone hologram.
+The layouts below describe the *opened* state.
+
 ## 3. Layouts
 
 ### Desktop (≥ 1024px)
@@ -182,8 +190,8 @@ Adding an item = adding an object to the right array. Components never hard-code
 | 0.0–1.1s | 0.0–0.5s | black; gold sparks drift in from the edges and converge (particles `uIntro`) |
 | 0.5–1.9s | 0.3–1.0s | shells assemble outer → inner (`uAssemble` 0→N), then the vortex ignites (`uIgnite`) |
 | 1.9–2.5s | 1.0–1.3s | `INITIALISING` types under the sphere; the name decodes (scramble → resolve) |
-| 2.5–3.0s | 1.3–1.5s | three beams draw from the sphere to the module anchors |
-| 3.0–3.8s | 1.5–2.0s | modules materialise in turn: outline assembles, flickers, fills; items stagger 60ms |
+| 2.5–3.0s | 1.3–1.5s | the sequence ends on the bare hologram with the "enter the core" prompt |
+| on open | on open | three beams draw (0.05s), modules materialise in turn (0.45s), items stagger 60ms (0.85s) |
 
 Skippable (click, Esc, "skip" button). First visit plays in full; later visits play a 1s
 version (assemble 0.4s, beams 0.2s, panels 0.4s). `prefers-reduced-motion`: no intro,
