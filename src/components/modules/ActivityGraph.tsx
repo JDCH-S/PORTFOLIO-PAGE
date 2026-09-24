@@ -3,7 +3,12 @@
 import { useEffect, useRef } from "react";
 import { useReducedMotion } from "@/lib/useMediaQuery";
 
-/** Small live activity sparkline: a scrolling line with a glowing head, seeded per agent. */
+const STEP_MS = 140;
+
+/**
+ * Small live activity sparkline: a scrolling line with a glowing head, seeded per agent.
+ * The line advances every 140ms and paints only then, and only while the canvas is on screen.
+ */
 export default function ActivityGraph({ seed, width = 120, height = 28, live = true }: { seed: number; width?: number; height?: number; live?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const reduced = useReducedMotion();
@@ -18,15 +23,8 @@ export default function ActivityGraph({ seed, width = 120, height = 28, live = t
     ctx.scale(dpr, dpr);
     const N = 40;
     const values: number[] = Array.from({ length: N }, (_, i) => 0.35 + 0.3 * Math.sin(i * 0.6 + seed) + 0.2 * Math.sin(i * 1.7 + seed * 3));
-    let raf = 0;
-    let last = 0;
     const gold = getComputedStyle(canvas).getPropertyValue("--gold").trim() || "#ffb23f";
-    const draw = (now: number) => {
-      if (live && !reduced && now - last > 140) {
-        last = now;
-        values.push(Math.min(1, Math.max(0.05, values[values.length - 1] + (Math.random() - 0.5) * 0.28)));
-        values.shift();
-      }
+    const paint = () => {
       ctx.clearRect(0, 0, width, height);
       ctx.strokeStyle = "rgba(143,179,217,0.25)";
       ctx.lineWidth = 1;
@@ -47,16 +45,42 @@ export default function ActivityGraph({ seed, width = 120, height = 28, live = t
       });
       ctx.stroke();
       ctx.shadowBlur = 0;
-      const hx = width;
       const hy = height - 2 - values[N - 1] * (height - 4);
       ctx.fillStyle = "#ffecc8";
       ctx.beginPath();
-      ctx.arc(hx - 1, hy, 1.8, 0, Math.PI * 2);
+      ctx.arc(width - 1, hy, 1.8, 0, Math.PI * 2);
       ctx.fill();
-      if (live && !reduced) raf = requestAnimationFrame(draw);
     };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    paint();
+    if (!live || reduced) return;
+
+    let timer = 0;
+    let visible = false;
+    const tick = () => {
+      values.push(Math.min(1, Math.max(0.05, values[values.length - 1] + (Math.random() - 0.5) * 0.28)));
+      values.shift();
+      paint();
+    };
+    const start = () => {
+      if (!timer && visible && !document.hidden) timer = window.setInterval(tick, STEP_MS);
+    };
+    const stop = () => {
+      window.clearInterval(timer);
+      timer = 0;
+    };
+    const io = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (visible) start();
+      else stop();
+    });
+    io.observe(canvas);
+    const onVisibility = () => (document.hidden ? stop() : start());
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      io.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [seed, width, height, live, reduced]);
   return <canvas ref={ref} width={width} height={height} style={{ width, height }} aria-hidden className="block" />;
 }

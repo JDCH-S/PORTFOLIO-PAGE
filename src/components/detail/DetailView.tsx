@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { AnimatePresence, motion, type PanInfo } from "framer-motion";
+import { AnimatePresence, m, type PanInfo } from "framer-motion";
 import { agents, projects, skills, systems } from "@/content/content";
 import type { Item } from "@/content/types";
 import { useSiteStore } from "@/store/siteStore";
-import { useSphereStore } from "@/components/sphere/sphereStore";
+import { spin, useSphereStore } from "@/components/sphere/sphereStore";
 import { useIsDesktop, useReducedMotion } from "@/lib/useMediaQuery";
 import Brackets from "@/components/hud/Brackets";
 import Kbd from "@/components/ui/Kbd";
@@ -35,6 +35,8 @@ export default function DetailView() {
     if (!item) return;
     lastFocus.current = document.activeElement as HTMLElement | null;
     const sphere = useSphereStore.getState();
+    // a coasting sphere parks still
+    spin.vYaw = spin.vPitch = 0;
     if (isDesktop) {
       // the left margin beside the overlay, below the header row
       sphere.setFrame({ x: Math.max(48, window.innerWidth * 0.04), y: window.innerHeight * 0.09 + 56, size: 76 });
@@ -86,7 +88,7 @@ export default function DetailView() {
   return (
     <AnimatePresence>
       {item ? (
-        <motion.div
+        <m.div
           key="detail"
           className="fixed inset-0 z-50"
           initial={{ opacity: 0 }}
@@ -94,14 +96,15 @@ export default function DetailView() {
           exit={{ opacity: 0 }}
           transition={{ duration: reduced ? 0.2 : 0.3 }}
         >
-          <button type="button" aria-label="Close" onClick={closeItem} className="absolute inset-0 h-full w-full cursor-default bg-bg/70" />
+          {/* the page behind is inert and the dialog has its own close control: the backdrop is pointer-only */}
+          <div aria-hidden onClick={closeItem} className="absolute inset-0 cursor-default bg-bg/80" />
           {isDesktop ? (
-            <motion.div
+            <m.div
               ref={panel}
               role="dialog"
               aria-modal="true"
               aria-labelledby="detail-title"
-              className="glass absolute inset-x-[8vw] top-[9vh] bottom-[7vh] flex flex-col rounded-[2px] border border-gold shadow-glow-strong"
+              className="glass-solid absolute inset-x-[8vw] top-[9vh] bottom-[7vh] flex flex-col rounded-[2px] border border-gold shadow-glow-strong"
               initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
@@ -120,14 +123,15 @@ export default function DetailView() {
               <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6 [scrollbar-width:thin]">
                 <DetailSections item={item} />
               </div>
-            </motion.div>
+            </m.div>
           ) : (
-            <motion.div
+            <m.div
               ref={panel}
               role="dialog"
               aria-modal="true"
               aria-labelledby="detail-title"
-              className="glass absolute inset-x-0 bottom-0 top-[6vh] flex flex-col rounded-t-[6px] border border-gold border-b-0 shadow-glow-strong"
+              className="glass-solid absolute inset-x-0 bottom-0 flex flex-col rounded-t-[6px] border border-gold border-b-0 shadow-glow-strong sm:mx-auto sm:max-w-[640px]"
+              style={{ top: "calc(env(safe-area-inset-top, 0px) + 56px)" }}
               initial={reduced ? { opacity: 0 } : { y: "100%" }}
               animate={reduced ? { opacity: 1 } : { y: 0 }}
               exit={reduced ? { opacity: 0 } : { y: "100%" }}
@@ -147,9 +151,9 @@ export default function DetailView() {
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-width:thin]" style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}>
                 <DetailSections item={item} />
               </div>
-            </motion.div>
+            </m.div>
           )}
-        </motion.div>
+        </m.div>
       ) : null}
     </AnimatePresence>
   );

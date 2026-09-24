@@ -1,3 +1,8 @@
+import { preload } from "react-dom";
+
+const SRCSET = "/sphere-static-600.webp 600w, /sphere-static.webp 1200w";
+const SIZES = "(max-width: 640px) 60vw, min(100vmin, 1000px)";
+
 /**
  * Static fallback for the holographic sphere: used before the 3D scene loads,
  * for prefers-reduced-motion, and when WebGL is unavailable.
@@ -13,6 +18,8 @@ export default function StaticSphere({
   loading?: boolean;
   className?: string;
 }) {
+  // the poster is the largest paint before the canvas: fetch it ahead of the scripts and fonts
+  preload("/sphere-static.webp", { as: "image", imageSrcSet: SRCSET, imageSizes: SIZES, fetchPriority: "high" });
   return (
     <div
       className={`absolute inset-0 flex items-center justify-center ${className}`}
@@ -34,14 +41,14 @@ export default function StaticSphere({
         <picture>
           <img
             src="/sphere-static.webp"
-            srcSet="/sphere-static-600.webp 600w, /sphere-static.webp 1200w"
-            sizes="(max-width: 640px) 100vw, min(100vmin, 1000px)"
+            srcSet={SRCSET}
+            sizes={SIZES}
             alt=""
             width={1200}
             height={1200}
             decoding="async"
             loading="eager"
-            fetchPriority={loading ? "low" : "high"}
+            fetchPriority="high"
             className="absolute inset-0 h-full w-full object-contain mix-blend-screen"
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).style.display = "none";

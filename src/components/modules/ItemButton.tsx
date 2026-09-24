@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, type ButtonHTMLAttributes } from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { useSiteStore } from "@/store/siteStore";
 import { itemVariants } from "./ItemList";
 import Brackets from "@/components/hud/Brackets";
@@ -15,11 +15,10 @@ export interface ItemButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
  * brackets, and the open-item wiring (fragment stream, then the detail view).
  */
 const ItemButton = forwardRef<HTMLButtonElement, ItemButtonProps>(function ItemButton({ itemId, className = "", children, onClick, ...rest }, ref) {
-  const hover = useSiteStore((s) => s.hover);
+  const on = useSiteStore((s) => s.hover === itemId);
   const setHover = useSiteStore((s) => s.setHover);
-  const on = hover === itemId;
   return (
-    <motion.li variants={itemVariants} className="list-none">
+    <m.li variants={itemVariants} className="list-none">
       <button
         ref={ref}
         type="button"
@@ -43,7 +42,7 @@ const ItemButton = forwardRef<HTMLButtonElement, ItemButtonProps>(function ItemB
         <Brackets size={on ? 14 : 8} />
         {children}
       </button>
-    </motion.li>
+    </m.li>
   );
 });
 

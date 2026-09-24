@@ -14,11 +14,12 @@ export interface DecodeProps {
   /** render the plain text with no effect */
   reduced?: boolean;
   as?: "span" | "h1" | "h2" | "div";
+  style?: React.CSSProperties;
 }
 
 /** Scrambled characters resolving left to right into the real text. */
-export default function Decode({ text, active, duration = 700, className, reduced = false, as: Tag = "span" }: DecodeProps) {
-  const [out, setOut] = useState(() => scramble(text, 0));
+export default function Decode({ text, active, duration = 700, className, reduced = false, as: Tag = "span", style }: DecodeProps) {
+  const [out, setOut] = useState(() => scrambleStatic(text));
   const raf = useRef(0);
 
   useEffect(() => {
@@ -33,11 +34,23 @@ export default function Decode({ text, active, duration = 700, className, reduce
     return () => cancelAnimationFrame(raf.current);
   }, [text, active, duration, reduced]);
 
+  // the real text stays in the accessibility tree; the scramble is decoration
   return (
-    <Tag className={className} aria-label={text}>
+    <Tag className={className} style={style}>
+      <span className="sr-only">{text}</span>
       <span aria-hidden>{reduced ? text : out}</span>
     </Tag>
   );
+}
+
+/** Deterministic scramble for the first render, so server and client agree. */
+function scrambleStatic(text: string): string {
+  let s = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    s += ch === " " ? ch : GLYPHS[(i * 7 + text.length) % GLYPHS.length];
+  }
+  return s;
 }
 
 function scramble(text: string, progress: number): string {

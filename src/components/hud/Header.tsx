@@ -14,7 +14,7 @@ export default function Header({ className = "" }: { className?: string }) {
   return (
     <header
       className={`flex items-start justify-between gap-6 transition-opacity duration-[480ms] ease-[var(--ease-out)] ${className}`}
-      style={{ opacity: step >= 2 ? 1 : 0 }}
+      style={{ opacity: step >= 2 ? 1 : 0.35 }}
     >
       <div className="min-w-0">
         <Decode as="h1" text={profile.name.toUpperCase()} active={show} reduced={reduced} className="font-display text-[26px] leading-[30px] font-semibold tracking-[0.06em] text-gold-hot" />

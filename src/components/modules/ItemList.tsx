@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { useSiteStore } from "@/store/siteStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
 
@@ -25,7 +25,7 @@ export default function ItemList({ children, className = "" }: { children: React
     }
   };
   return (
-    <motion.ul
+    <m.ul
       initial={false}
       animate={step >= 6 ? "shown" : "hidden"}
       variants={{ hidden: {}, shown: { transition: { staggerChildren: reduced ? 0 : 0.06 } } }}
@@ -33,7 +33,7 @@ export default function ItemList({ children, className = "" }: { children: React
       onKeyDown={onKeyDown}
     >
       {children}
-    </motion.ul>
+    </m.ul>
   );
 }
 

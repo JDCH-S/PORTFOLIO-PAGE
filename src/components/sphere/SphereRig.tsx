@@ -78,15 +78,17 @@ export default function SphereRig({ look, coarsePointer, timeOffset = 0, childre
 
     // drag-to-rotate: direct while dragging, inertia with friction after release
     if (!spin.active) {
+      // while the sphere glides to a new frame the coast is braked hard so it arrives settled
+      const braking = performance.now() < spin.brakeUntil;
       spin.yaw += spin.vYaw * real;
       spin.pitch = THREE.MathUtils.clamp(spin.pitch + spin.vPitch * real, -1.1, 1.1);
-      const friction = Math.exp(-real * 1.6);
+      const friction = Math.exp(-real * (braking ? 6 : 2.2));
       spin.vYaw *= friction;
       spin.vPitch *= friction;
-      if (Math.abs(spin.vYaw) < 0.002) spin.vYaw = 0;
-      if (Math.abs(spin.vPitch) < 0.002) spin.vPitch = 0;
+      if (Math.abs(spin.vYaw) < 0.01) spin.vYaw = 0;
+      if (Math.abs(spin.vPitch) < 0.01) spin.vPitch = 0;
       // pitch eases back toward level once the fling has died down
-      if (spin.vPitch === 0) spin.pitch = THREE.MathUtils.damp(spin.pitch, 0, 0.6, real);
+      if (spin.vPitch === 0) spin.pitch = THREE.MathUtils.damp(spin.pitch, 0, braking ? 3 : 0.9, real);
     }
     g.rotation.set(cur.rx + spin.pitch, cur.ry + spin.yaw, 0);
 

@@ -26,7 +26,8 @@ export default function Typewriter({ text, active, speed = 34, className, reduce
     return () => clearInterval(id);
   }, [text, active, speed, reduced]);
   return (
-    <span className={className} aria-label={text}>
+    <span className={className}>
+      <span className="sr-only">{text}</span>
       <span aria-hidden>{text.slice(0, reduced ? text.length : n)}</span>
       {caret ? <span aria-hidden className="ml-[2px] inline-block h-[1em] w-[0.55em] translate-y-[2px] animate-[caret_1s_steps(1)_infinite] bg-gold" /> : null}
     </span>

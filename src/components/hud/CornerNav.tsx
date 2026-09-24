@@ -16,13 +16,13 @@ export default function CornerNav({ className = "", onSelect }: { className?: st
     <nav aria-label="Modules" className={`flex items-center gap-1 ${className}`}>
       <button
         type="button"
-        aria-pressed={view === "core"}
+        aria-current={view === "core" ? "true" : undefined}
         onClick={() => closeToCore()}
-        className={`label flex h-11 items-center gap-2 rounded-[2px] border px-3 transition-colors duration-[240ms] ${
-          view === "core" ? "border-gold text-gold-hot" : "border-transparent text-steel hover:border-steel-line hover:text-fg"
+        className={`label flex h-11 items-center gap-2 rounded-[2px] border border-transparent px-3 transition-colors duration-[240ms] ${
+          view === "core" ? "text-gold-hot" : "text-steel hover:text-fg"
         }`}
       >
-        <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-gold" />
+        <span aria-hidden className={`h-1.5 w-1.5 rounded-full bg-gold ${view === "core" ? "shadow-[0_0_8px_var(--gold)]" : "opacity-50"}`} />
         core
       </button>
       {[...modules, aboutEntry].map((m) => {
@@ -44,12 +44,13 @@ export default function CornerNav({ className = "", onSelect }: { className?: st
                 el.querySelector<HTMLElement>("button, a, [tabindex]")?.focus({ preventScroll: true });
               }, open ? 0 : 800);
             }}
-            className={`label flex h-11 items-center gap-2 rounded-[2px] border px-3 transition-colors duration-[240ms] ${
-              on ? "border-gold text-gold-hot" : "border-transparent text-steel hover:border-steel-line hover:text-fg"
+            className={`label relative flex h-11 items-center gap-2 rounded-[2px] border border-transparent px-3 transition-colors duration-[240ms] ${
+              on ? "text-gold-hot" : "text-steel hover:text-fg"
             }`}
           >
             <span className="text-steel-dim">{m.index}</span>
             {m.title}
+            <span aria-hidden className={`absolute inset-x-3 bottom-2 h-px bg-gold transition-opacity duration-[240ms] ${on ? "opacity-100" : "opacity-0"}`} />
           </button>
         );
       })}

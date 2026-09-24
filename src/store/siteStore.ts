@@ -58,7 +58,7 @@ export const useSiteStore = create<SiteState>((set) => ({
   setStep: (step) => set({ step }),
   setIntroSeen: (introSeen) => set({ introSeen }),
   openMenu: () => set({ view: "menu", activeItem: null, phase: "idle" }),
-  openModule: (activeModule) => set({ view: "module", activeModule, activeItem: null, phase: "idle" }),
+  openModule: (activeModule) => set({ view: "module", activeModule, activeItem: null, phase: "idle", hover: null }),
   backToMenu: () => set({ view: "menu", activeItem: null, phase: "idle", hover: null }),
   closeToCore: () => set({ view: "core", activeItem: null, phase: "idle", hover: null }),
   setActiveModule: (activeModule) => set({ activeModule }),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
@@ -33,9 +33,10 @@ function measure(): Beam[] {
     if (!el) continue;
     const rect = el.getBoundingClientRect();
     if (rect.width === 0) continue;
-    // nearest point on the panel edge to the sphere centre
-    const ex = Math.min(Math.max(cx, rect.left), rect.right);
-    const ey = Math.min(Math.max(cy, rect.top), rect.bottom);
+    // land on the panel's title row when there is one, else the nearest edge point
+    const title = el.querySelector("h2")?.getBoundingClientRect();
+    const ex = title ? (title.left < cx ? title.right + 8 : rect.left) : Math.min(Math.max(cx, rect.left), rect.right);
+    const ey = title ? title.top + title.height / 2 : Math.min(Math.max(cy, rect.top), rect.bottom);
     const dx = ex - cx;
     const dy = ey - cy;
     const len = Math.hypot(dx, dy) || 1;
@@ -81,7 +82,7 @@ export default function Beams() {
     <svg aria-hidden className="pointer-events-none fixed inset-0 z-[5] h-full w-full">
       {beams.map((b, i) => (
         <g key={b.id}>
-          <motion.path
+          <m.path
             d={b.d}
             fill="none"
             stroke="var(--gold)"
@@ -102,7 +103,8 @@ export default function Beams() {
               style={{ opacity: drawn ? 0.9 : 0, transition: "opacity 480ms var(--ease-out)" }}
             />
           ) : null}
-          <circle cx={b.end.x} cy={b.end.y} r={2.2} fill="var(--gold)" style={{ opacity: drawn ? (b.strong ? 1 : 0.5) : 0, transition: "opacity 240ms var(--ease-out)" }} />
+          {/* port tick where the beam docks */}
+          <line x1={b.end.x} y1={b.end.y - 6} x2={b.end.x} y2={b.end.y + 6} stroke="var(--gold)" strokeWidth={1.5} style={{ opacity: drawn ? (b.strong ? 1 : 0.5) : 0, transition: "opacity 240ms var(--ease-out)" }} />
         </g>
       ))}
     </svg>

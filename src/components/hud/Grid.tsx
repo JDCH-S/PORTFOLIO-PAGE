@@ -65,8 +65,34 @@ export default function Grid() {
       plane(-1, 0.45);
     };
     draw();
-    window.addEventListener("resize", draw);
-    return () => window.removeEventListener("resize", draw);
+    let drawnW = window.innerWidth;
+    let drawnH = window.innerHeight;
+    let raf = 0;
+    let settle = 0;
+    const redraw = () => {
+      raf = 0;
+      drawnW = window.innerWidth;
+      drawnH = window.innerHeight;
+      draw();
+    };
+    const onResize = () => {
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+      // the mobile URL bar shows and hides while scrolling: stretch now, redraw once it settles
+      if (W === drawnW && Math.abs(H - drawnH) < 120) {
+        canvas.style.height = `${H}px`;
+        window.clearTimeout(settle);
+        settle = window.setTimeout(redraw, 400);
+        return;
+      }
+      if (!raf) raf = requestAnimationFrame(redraw);
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(settle);
+      window.removeEventListener("resize", onResize);
+    };
   }, []);
 
   return (

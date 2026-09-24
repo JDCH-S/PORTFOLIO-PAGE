@@ -63,13 +63,17 @@ export default function DetailSections({ item }: { item: Item }) {
               {s}
             </Tag>
           ))}
-          {item.category === "agent" || item.category === "skill"
-            ? item.tools.map((t) => (
-                <Tag key={`tool-${t}`}>{t}</Tag>
-              ))
-            : null}
         </div>
       </Section>
+      {item.category === "agent" || item.category === "skill" ? (
+        <Section label="tools">
+          <div className="flex flex-wrap gap-1.5">
+            {item.tools.map((t) => (
+              <Tag key={`tool-${t}`}>{t}</Tag>
+            ))}
+          </div>
+        </Section>
+      ) : null}
 
       <Section label="screenshots">
         {item.screenshots && item.screenshots.length > 0 ? (

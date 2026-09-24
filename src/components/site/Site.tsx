@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { LazyMotion, MotionConfig } from "framer-motion";
 import SphereStage from "@/components/sphere/SphereStage";
 import Grid from "@/components/hud/Grid";
 import DetailView from "@/components/detail/DetailView";
@@ -13,34 +14,51 @@ import DesktopLayout from "./DesktopLayout";
 import MobileLayout from "./MobileLayout";
 import Emergence from "./Emergence";
 import CoreButton from "./CoreButton";
+import BootHeader from "./BootHeader";
 
 const noop = () => () => {};
+// the animation engine (with drag + layout) loads after the first paint; `m` components render statically until then
+const loadFeatures = () => import("framer-motion").then((mod) => mod.domMax);
 
 /** Client root: the sphere as a fixed layer, the HUD ground, the intro, and the layout for the viewport. */
 export default function Site() {
-  const mounted = useSyncExternalStore(noop, () => true, () => false);
+  const mounted = useSyncExternalStore(
+    noop,
+    () => true,
+    () => false,
+  );
   const isDesktop = useIsDesktop();
   const reduced = useReducedMotion();
-  // while an item is open the parked sphere rises above the detail backdrop (corner on desktop, header emblem on mobile)
+  const view = useSiteStore((s) => s.view);
+  // while an item is open the parked sphere rises above the detail backdrop (corner on desktop, header emblem on mobile);
+  // on a phone the sphere also passes over the sticky header while it docks into the emblem
   const detail = useSiteStore((s) => s.phase) === "detail";
+  const layer = detail ? "z-[55]" : !isDesktop && view === "module" ? "z-[25]" : "z-0";
   return (
-    <main className="relative">
-      <Grid />
-      {/* the sphere layer rises above the detail backdrop so the parked sphere stays lit */}
-      <div className={`pointer-events-none fixed inset-0 mix-blend-screen ${detail ? "z-[55]" : "z-0"}`} aria-hidden>
-        <SphereStage blend={false} />
-      </div>
-      {mounted ? (
-        <>
-          <IntroSequence desktop={isDesktop} reduced={reduced} />
-          <Emergence desktop={isDesktop} />
-          <SphereLean />
-          <FragmentStream />
-          {isDesktop ? <DesktopLayout /> : <MobileLayout />}
-          <CoreButton coarse={!isDesktop} />
-          <DetailView />
-        </>
-      ) : null}
-    </main>
+    <LazyMotion features={loadFeatures} strict>
+      <MotionConfig reducedMotion="user">
+        <main className="relative">
+          <Grid />
+          {/* the renderer gives its canvas pointer-events: auto inline; nothing in this layer may take a tap */}
+          <div className={`pointer-events-none fixed inset-0 mix-blend-screen [&_*]:pointer-events-none! ${layer}`} aria-hidden>
+            <SphereStage blend={false} />
+          </div>
+          {/* server-rendered name so the largest text paints before any JavaScript */}
+          {!mounted ? <BootHeader /> : null}
+          {mounted ? (
+            <>
+              <IntroSequence desktop={isDesktop} reduced={reduced} />
+              <Emergence desktop={isDesktop} />
+              <SphereLean />
+              <FragmentStream />
+              <CoreButton coarse={!isDesktop} />
+              {/* while the detail dialog is open the page behind it is inert for every input */}
+              <div inert={detail}>{isDesktop ? <DesktopLayout /> : <MobileLayout />}</div>
+              <DetailView />
+            </>
+          ) : null}
+        </main>
+      </MotionConfig>
+    </LazyMotion>
   );
 }

@@ -74,17 +74,19 @@ small 14/22 · body 16/26 · h3 20/28 (display) · h2 28/34 (display) · h1 40/4
 ## 2.4 The core is the default view; content emerges in two steps
 
 The page opens on the hologram alone: the sphere, the name, the corner nav and an
-"enter the core · drag to rotate" prompt. Dragging the sphere (mouse or finger) rotates it,
-with inertia on release. Tapping it steps through three views:
+"enter the core · drag to rotate" prompt. Dragging the sphere (mouse or finger) rotates it in
+any direction (a drag across the diameter is three quarters of a turn at any size), with inertia
+on release; a press catches a coasting sphere. Tapping it steps through three views:
 
 1. **core**: the hologram alone.
 2. **menu**: five callouts emerge on the sphere's rim, the way an instrument labels a specimen:
    a leader line from the rim to a text label (index, title, count; blurb on hover). No
    containers. Projects upper-left, Agents upper-right, Systems lower-left, Skills lower-right,
-   About below. On mobile they are a list of leader-tick rows under the sphere.
+   About below. On mobile they hang off a spine that drops from the sphere: index, shard, title.
 3. **module**: clicking a callout opens only that section. On desktop the sphere and the other
-   options (as text rows) move to the left column and the section fills the right; on mobile the
-   sphere docks into the sticky header and the section is one of five swipeable tabs.
+   options (on the same spine, under the sphere) move to the left column and the section fills
+   the right, with one beam from the sphere to the section title; on mobile the sphere docks
+   into the sticky header and the section is one of five swipeable tabs.
 
 Sections: Projects, Agents, **Skills** (the reusable skills the agents load, in the shape of a
 skill file: name, version, trigger, tools, used by) , Systems, and **About** (identity card,
@@ -223,7 +225,10 @@ static sphere, panels fade in over 240ms.
 | scroll (mobile) | sphere → 40px emblem in the sticky header | `scaleTarget`/`offsetTarget` follow scroll |
 
 Keyboard: Tab through nav, modules and items; Enter opens; Esc closes; arrow keys move
-between items in a module. All interactive elements have visible focus rings in `--gold`.
+between the options (menu and spine) and between items in a module. After a keyboard action
+focus follows the view: the core button, the option you came from, the opened panel. Focus rings
+are 1px `--gold`; the text-only options show focus as their hover state (hot title, rule) instead
+of a box, so nothing draws a container around them.
 
 ## 8. Assumptions to confirm
 

@@ -30,7 +30,8 @@
   --offline: #ff5c5c;
 
   --glass: rgba(7, 11, 25, 0.58);
-  --glass-blur: 14px;
+  --glass-solid: rgba(7, 11, 25, 0.94);
+  --glass-blur: 10px;
 
   --font-display: var(--font-chakra), system-ui, sans-serif;
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
@@ -122,12 +123,17 @@ body {
 .glass {
   background: var(--glass);
   backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+/* for reading surfaces: near-opaque, no blur (a blur over the live canvas costs every frame) */
+.glass-solid {
+  background: var(--glass-solid);
 }
 
-:focus-visible {
-  outline: 1px solid var(--gold);
-  outline-offset: 2px;
+@layer base {
+  :focus-visible {
+    outline: 1px solid var(--gold);
+    outline-offset: 2px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, type ReactNode } from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import type { ModuleId } from "@/content/types";
 import { useSiteStore } from "@/store/siteStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
@@ -23,7 +23,7 @@ export interface ModuleFrameProps {
  */
 export default function ModuleFrame({ id, index, title, count, status, children, className = "" }: ModuleFrameProps) {
   const step = useSiteStore((s) => s.step);
-  const hover = useSiteStore((s) => s.hover);
+  const hovered = useSiteStore((s) => s.hover === id);
   const setHover = useSiteStore((s) => s.setHover);
   const setAnchor = useSiteStore((s) => s.setAnchor);
   const active = useSiteStore((s) => s.activeModule) === id;
@@ -34,7 +34,7 @@ export default function ModuleFrame({ id, index, title, count, status, children,
   const delay = 0;
 
   return (
-    <motion.div
+    <m.div
       initial={false}
       animate={shown ? "shown" : "hidden"}
       variants={{
@@ -51,14 +51,15 @@ export default function ModuleFrame({ id, index, title, count, status, children,
         ref={ref}
         id={`module-${id}`}
         aria-labelledby={`module-${id}-title`}
-        active={active || hover === id}
+        tabIndex={-1}
+        active={active || hovered}
         onMouseEnter={() => setHover(id)}
         onMouseLeave={() => setHover(null)}
         onFocusCapture={() => setHover(id)}
         onBlurCapture={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHover(null);
         }}
-        className="flex h-full min-h-0 flex-col p-4 lg:p-6"
+        className="flex h-full min-h-0 flex-col p-4 outline-none lg:p-6"
       >
         <div className="mb-3 flex items-baseline justify-between gap-3 border-b border-steel-line pb-3">
           <h2 id={`module-${id}-title`} className="shrink-0 font-display text-h3 font-semibold tracking-[0.08em] text-gold uppercase">
@@ -67,11 +68,11 @@ export default function ModuleFrame({ id, index, title, count, status, children,
           </h2>
           <span className="label min-w-0 truncate whitespace-nowrap text-steel">
             {count !== undefined ? String(count).padStart(2, "0") : null}
-            {status ? <span className={`text-steel-dim ${count !== undefined ? "hidden xl:inline" : ""}`}>{count !== undefined ? " · " : ""}{status}</span> : null}
+            {status ? <span className={`text-steel-dim ${count !== undefined ? "hidden xl:inline" : "hidden md:inline"}`}>{count !== undefined ? " · " : ""}{status}</span> : null}
           </span>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">{children}</div>
       </Panel>
-    </motion.div>
+    </m.div>
   );
 }

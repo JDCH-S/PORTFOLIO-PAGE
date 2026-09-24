@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
@@ -58,7 +58,7 @@ export default function FragmentStream() {
       <AnimatePresence>
         {stream
           ? stream.to.map((t, i) => (
-              <motion.span
+              <m.span
                 key={`${stream.id}-${i}`}
                 className="absolute left-0 top-0 h-[2px] rounded-full bg-gold-hot"
                 style={{ width: t.len, boxShadow: "0 0 6px var(--gold), 0 0 14px var(--gold-glow)" }}

@@ -32,8 +32,8 @@ export const INTRO_LAST_STEP: IntroStepValue = 3;
 
 /** Emergence timings (seconds): options after the core is clicked; panel and items after an option is chosen. */
 export const EMERGE = {
-  desktop: { options: 0.05, panel: 0.2, items: 0.6 },
-  mobile: { options: 0.05, panel: 0.15, items: 0.45 },
+  desktop: { options: 0.28, panel: 0.2, items: 0.6 },
+  mobile: { options: 0.2, panel: 0.15, items: 0.45 },
   quick: { options: 0, panel: 0.05, items: 0.15 },
 } as const;
 
