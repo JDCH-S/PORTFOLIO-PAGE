@@ -1,28 +1,91 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ tokens
+   The only source of colour, type, spacing and motion values. See docs/BLUEPRINT.md.
+*/
 :root {
+  color-scheme: dark;
+
   --bg: #04060f;
   --bg-2: #070b19;
+  --bg-3: #0b1124;
+  --grid: rgba(143, 179, 217, 0.07);
+  --scan: rgba(255, 255, 255, 0.025);
+
   --fg: #e9e4d8;
   --fg-dim: #8f9bb3;
+
   --gold: #ffb23f;
-  --gold-hot: #fff1cf;
+  --gold-hot: #ffecc8;
   --gold-deep: #ff6a00;
+  --gold-line: rgba(255, 178, 63, 0.32);
+  --gold-glow: rgba(255, 178, 63, 0.22);
+
   --steel: #8fb3d9;
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --steel-dim: #5c6e8c;
+  --steel-line: rgba(143, 179, 217, 0.22);
+
+  --online: #6cf0a8;
+  --standby: #ffb23f;
+  --offline: #ff5c5c;
+
+  --glass: rgba(7, 11, 25, 0.58);
+  --glass-blur: 14px;
+
+  --font-display: var(--font-chakra), system-ui, sans-serif;
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --d-fast: 120ms;
+  --d-base: 240ms;
+  --d-slow: 480ms;
+  --d-seq: 900ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --glow-gold: 0 0 0 1px var(--gold-line), 0 0 18px var(--gold-glow);
+  --glow-gold-strong: 0 0 0 1px var(--gold), 0 0 28px var(--gold-glow);
 }
 
 @theme inline {
   --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-bg-3: var(--bg-3);
   --color-fg: var(--fg);
   --color-fg-dim: var(--fg-dim);
   --color-gold: var(--gold);
   --color-gold-hot: var(--gold-hot);
   --color-gold-deep: var(--gold-deep);
+  --color-gold-line: var(--gold-line);
+  --color-gold-glow: var(--gold-glow);
   --color-steel: var(--steel);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-steel-dim: var(--steel-dim);
+  --color-steel-line: var(--steel-line);
+  --color-online: var(--online);
+  --color-standby: var(--standby);
+  --color-offline: var(--offline);
+  --color-glass: var(--glass);
+
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --text-label: 11px;
+  --text-label--line-height: 16px;
+  --text-label--letter-spacing: 0.18em;
+  --text-data: 12px;
+  --text-data--line-height: 18px;
+  --text-h3: 20px;
+  --text-h3--line-height: 28px;
+  --text-h2: 28px;
+  --text-h2--line-height: 34px;
+  --text-h1: 40px;
+  --text-h1--line-height: 44px;
+
+  --ease-out: var(--ease-out);
+  --ease-in-out: var(--ease-in-out);
+  --shadow-glow: var(--glow-gold);
+  --shadow-glow-strong: var(--glow-gold-strong);
 }
 
 html,
@@ -30,10 +93,50 @@ body {
   height: 100%;
   background: var(--bg);
   color: var(--fg);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-sans);
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
   margin: 0;
+}
+
+/* HUD utilities used across the site */
+.font-display {
+  font-family: var(--font-display);
+}
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.data {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+:focus-visible {
+  outline: 1px solid var(--gold);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
