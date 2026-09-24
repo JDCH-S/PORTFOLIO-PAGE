@@ -17,7 +17,7 @@ export interface ModuleFrameProps {
   className?: string;
 }
 
-const ORDER: Record<ModuleId, number> = { projects: 0, agents: 1, systems: 2 };
+const ORDER: Record<ModuleId, number> = { projects: 0, agents: 0, systems: 0 };
 
 /**
  * A module panel: title row, status line, beam anchor, and the materialise animation
@@ -31,7 +31,8 @@ export default function ModuleFrame({ id, index, title, count, status, children,
   const active = useSiteStore((s) => s.activeModule) === id;
   const reduced = useReducedMotion();
   const ref = useCallback((el: HTMLElement | null) => setAnchor(id, el), [id, setAnchor]);
-  const shown = step >= 5;
+  const view = useSiteStore((s) => s.view);
+  const shown = view === "module" && step >= 5;
   const delay = reduced ? 0 : ORDER[id] * 0.18;
 
   return (

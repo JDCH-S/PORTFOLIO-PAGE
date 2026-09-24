@@ -13,7 +13,8 @@ import Particles from "./Particles";
 import SphereRig from "./SphereRig";
 import Effects from "./Effects";
 import StaticSphere from "./StaticSphere";
-import { useSphereStore } from "./sphereStore";
+import { spin, useSphereStore } from "./sphereStore";
+import { useSpinDrag } from "./useSpinDrag";
 
 const DebugPanel = dynamic(() => import("./DebugPanel"), { ssr: false });
 
@@ -28,6 +29,8 @@ export interface SphereSceneProps {
    * the scene inside its own stacking context (a fixed layer) and blends that layer instead.
    */
   blend?: boolean;
+  /** attach drag-to-rotate to the scene itself (the site attaches it to its own overlay) */
+  spin?: boolean;
 }
 
 declare global {
@@ -35,6 +38,7 @@ declare global {
     __sphereReady?: boolean;
     __sphereStats?: Record<string, unknown>;
     __sphereStore?: typeof useSphereStore;
+    __sphereSpin?: typeof spin;
   }
 }
 
@@ -195,7 +199,8 @@ const TONES: ToneMode[] = ["none", "aces", "agx", "neutral"];
 /** full-resolution half-float passes get expensive above this many canvas pixels */
 const PIXEL_BUDGET = 4.5e6;
 
-export default function SphereScene({ tier: initialTier, coarsePointer, dpr, debug = false, className = "", blend = true }: SphereSceneProps) {
+export default function SphereScene({ tier: initialTier, coarsePointer, dpr, debug = false, className = "", blend = true, spin: spinHere = false }: SphereSceneProps) {
+  const drag = useSpinDrag({ allowPitch: !coarsePointer });
   const query = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const captureMode = !!query?.has("capture");
   // a forced ?tier= pins the tier (review + screenshot harness), so no runtime regression
@@ -240,8 +245,10 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   useEffect(() => {
     // handle for the screenshot harness and for tuning from the console
     window.__sphereStore = useSphereStore;
+    window.__sphereSpin = spin;
     return () => {
       delete window.__sphereStore;
+      delete window.__sphereSpin;
     };
   }, []);
   const onBuilt = useCallback((n: number) => {
@@ -282,7 +289,12 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   const monitorBounds = useCallback((): [number, number] => [40, Number.POSITIVE_INFINITY], []);
 
   return (
-    <div className={`absolute inset-0 ${className}`} data-tier={tier}>
+    <div
+      className={`absolute inset-0 ${spinHere ? "cursor-grab active:cursor-grabbing" : ""} ${className}`}
+      data-tier={tier}
+      style={spinHere ? { touchAction: coarsePointer ? "pan-y" : "none" } : undefined}
+      {...(spinHere ? drag : {})}
+    >
       <div className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible || hidePoster ? "opacity-0" : "opacity-100"}`} aria-hidden>
         <StaticSphere loading />
       </div>

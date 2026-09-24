@@ -44,6 +44,8 @@ export default function DetailView() {
       if (emblem) {
         const r = emblem.getBoundingClientRect();
         sphere.setFrame({ x: r.left + r.width / 2, y: r.top + r.height / 2, size: r.width });
+      } else {
+        sphere.setFrame({ x: 36, y: 36, size: 40 });
       }
     }
     sphere.setLeanTarget(0, 0);

@@ -4,7 +4,7 @@ import SphereStage from "@/components/sphere/SphereStage";
 export default function SpherePage() {
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-bg">
-      <SphereStage debug />
+      <SphereStage debug spin />
     </main>
   );
 }

@@ -12,19 +12,20 @@ import Telemetry from "@/components/hud/Telemetry";
 import ProjectsModule from "@/components/modules/ProjectsModule";
 import AgentsModule from "@/components/modules/AgentsModule";
 import SystemsModule from "@/components/modules/SystemsModule";
+import OptionNode from "./OptionNode";
 
 const ORDER: ModuleId[] = ["projects", "agents", "systems"];
 const EMBLEM = 40;
 
 /**
- * Mobile: compact sphere hero that shrinks into the sticky header's emblem on scroll,
- * then three swipeable tabs with a sticky tab bar. The detail view is a bottom sheet.
+ * Mobile. Core: the name over the hologram. Menu: a compact sphere with the three options
+ * listed under it. Module: the sphere shrinks into the sticky header's emblem on scroll,
+ * one module at a time in swipeable tabs. The detail view is a bottom sheet.
  */
 export default function MobileLayout() {
   const step = useSiteStore((s) => s.step);
   const phase = useSiteStore((s) => s.phase);
   const view = useSiteStore((s) => s.view);
-  const open = view === "modules";
   const active = useSiteStore((s) => s.activeModule);
   const setActive = useSiteStore((s) => s.setActiveModule);
   const reduced = useReducedMotion();
@@ -33,26 +34,32 @@ export default function MobileLayout() {
   const track = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
 
-  // sphere framing: follow the hero, then interpolate into the header emblem while scrolling
+  // sphere framing per view
   useEffect(() => {
     if (phase === "detail") return;
-    if (!open) {
-      // the lone hologram: centred in the viewport
-      useSphereStore.getState().setFrame(null);
+    const sphere = useSphereStore.getState();
+    if (view === "core") {
+      sphere.setFrame(null);
       window.scrollTo({ top: 0 });
       return;
     }
     const push = () => {
       const h = hero.current;
-      const e = emblem.current;
-      if (!h || !e) return;
+      if (!h) return;
       const hr = h.getBoundingClientRect();
+      const heroSize = Math.min(hr.width, hr.height) * 0.92;
+      if (view === "menu") {
+        sphere.setFrame({ x: hr.left + hr.width / 2, y: hr.top + hr.height / 2, size: heroSize });
+        return;
+      }
+      // module view: interpolate into the header emblem while scrolling
+      const e = emblem.current;
+      if (!e) return;
       const er = e.getBoundingClientRect();
       const span = Math.max(1, hr.height);
       const p = Math.min(1, Math.max(0, -hr.top / span));
       const t = 1 - Math.pow(1 - p, 2);
-      const heroSize = Math.min(hr.width, hr.height) * 0.92;
-      useSphereStore.getState().setFrame({
+      sphere.setFrame({
         x: hr.left + hr.width / 2 + (er.left + er.width / 2 - (hr.left + hr.width / 2)) * t,
         y: hr.top + hr.height / 2 + (er.top + er.height / 2 - (hr.top + hr.height / 2)) * t,
         size: heroSize + (EMBLEM - heroSize) * t,
@@ -66,7 +73,7 @@ export default function MobileLayout() {
       window.removeEventListener("scroll", push);
       window.removeEventListener("resize", push);
     };
-  }, [phase, open]);
+  }, [phase, view]);
 
   const index = ORDER.indexOf(active);
   const go = useCallback(
@@ -83,14 +90,42 @@ export default function MobileLayout() {
     else if (swipe > 60) go(index - 1);
   };
 
-  if (!open) {
-    // core view: just the name over the hologram; the CoreButton draws the prompt under the sphere
+  const nameBlock = (size: "lg" | "sm") => (
+    <div className="min-w-0 flex-1">
+      <Decode
+        as="h1"
+        text={profile.name.toUpperCase()}
+        active={step >= 3}
+        reduced={reduced}
+        className={`truncate font-display font-semibold tracking-[0.06em] text-gold-hot ${size === "lg" ? "text-[17px] leading-[22px]" : "text-[15px] leading-[20px]"}`}
+      />
+      <p className="label truncate text-steel">{profile.role}</p>
+    </div>
+  );
+
+  if (view === "core") {
     return (
       <div className="relative z-10 h-dvh overflow-hidden">
-        <header className="px-4 pt-3 transition-opacity duration-[480ms]" style={{ opacity: step >= 2 ? 1 : 0, paddingTop: "calc(12px + env(safe-area-inset-top, 0px))" }}>
-          <Decode as="h1" text={profile.name.toUpperCase()} active={step >= 3} reduced={reduced} className="truncate font-display text-[17px] leading-[22px] font-semibold tracking-[0.06em] text-gold-hot" />
-          <p className="label truncate text-steel">{profile.role}</p>
+        <header className="px-4 transition-opacity duration-[480ms]" style={{ opacity: step >= 2 ? 1 : 0, paddingTop: "calc(12px + env(safe-area-inset-top, 0px))" }}>
+          {nameBlock("lg")}
         </header>
+      </div>
+    );
+  }
+
+  if (view === "menu") {
+    return (
+      <div className="relative z-10 flex h-dvh flex-col overflow-hidden">
+        <header className="px-4" style={{ paddingTop: "calc(12px + env(safe-area-inset-top, 0px))" }}>
+          {nameBlock("lg")}
+        </header>
+        <div ref={hero} aria-hidden className="min-h-0 flex-1" />
+        <div className="flex flex-col gap-3 px-4" style={{ paddingBottom: "calc(20px + env(safe-area-inset-bottom, 0px))" }}>
+          <p className="label text-center text-steel">choose a module</p>
+          {modules.map((m, i) => (
+            <OptionNode key={m.id} id={m.id} index={m.index} title={m.title} count={m.items.length} blurb={m.blurb} order={i} />
+          ))}
+        </div>
       </div>
     );
   }
@@ -98,16 +133,10 @@ export default function MobileLayout() {
   return (
     <div className="relative z-10 min-h-dvh">
       {/* sticky header: emblem + name + tabs */}
-      <header
-        className="glass sticky top-0 z-20 border-b border-steel-line transition-opacity duration-[480ms]"
-        style={{ opacity: step >= 2 ? 1 : 0, paddingTop: "env(safe-area-inset-top, 0px)" }}
-      >
+      <header className="glass sticky top-0 z-20 border-b border-steel-line" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         <div className="flex items-center gap-3 px-4 py-2">
           <div ref={emblem} data-emblem aria-hidden className="h-10 w-10 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <Decode as="h1" text={profile.name.toUpperCase()} active={step >= 3} reduced={reduced} className="truncate font-display text-[15px] leading-[20px] font-semibold tracking-[0.06em] text-gold-hot" />
-            <p className="label truncate text-steel">{profile.role}</p>
-          </div>
+          {nameBlock("sm")}
         </div>
         <nav aria-label="Modules" className="grid grid-cols-3 border-t border-steel-line">
           {modules.map((m, i) => {
@@ -128,13 +157,10 @@ export default function MobileLayout() {
         </nav>
       </header>
 
-      {/* hero: the sphere sits here */}
-      <section aria-label="Core" className="relative" style={{ height: "min(62vw, 360px)" }}>
+      {/* hero: the sphere sits here and shrinks into the emblem on scroll */}
+      <section aria-label="Core" className="relative" style={{ height: "min(56vw, 320px)" }}>
         <div ref={hero} aria-hidden className="absolute inset-x-0 top-0 h-full" />
       </section>
-      <p className="label px-4 pb-3 text-center text-steel transition-opacity duration-[480ms]" style={{ opacity: step >= 5 ? 1 : 0 }}>
-        {profile.tagline}
-      </p>
 
       {/* swipeable tabs */}
       <div ref={track} className="overflow-hidden px-4 pb-6">

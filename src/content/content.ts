@@ -162,7 +162,7 @@ export const systems: System[] = [
 ];
 
 export const modules = [
-  { id: "projects", title: "Projects", index: "01", items: projects },
-  { id: "agents", title: "Agents", index: "02", items: agents },
-  { id: "systems", title: "Systems", index: "03", items: systems },
+  { id: "projects", title: "Projects", index: "01", items: projects, blurb: "Mission files: the problem, what was built, the measurable result." },
+  { id: "agents", title: "Agents", index: "02", items: agents, blurb: "Live units: their role, tools and activity." },
+  { id: "systems", title: "Systems", index: "03", items: systems, blurb: "Architecture diagrams with the data flowing between components." },
 ] as const;

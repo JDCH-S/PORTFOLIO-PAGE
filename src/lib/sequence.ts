@@ -30,11 +30,11 @@ export type IntroStepValue = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 /** The load sequence stops on the bare hologram (step 3); the content emerges on interaction. */
 export const INTRO_LAST_STEP: IntroStepValue = 3;
 
-/** Emergence of the modules after the core is opened: seconds until beams, panels, items. */
+/** Emergence timings (seconds): options after the core is clicked; panel and items after an option is chosen. */
 export const EMERGE = {
-  desktop: { beams: 0.05, panels: 0.45, items: 0.85 },
-  mobile: { beams: 0.05, panels: 0.3, items: 0.6 },
-  quick: { beams: 0, panels: 0.12, items: 0.24 },
+  desktop: { options: 0.05, panel: 0.2, items: 0.6 },
+  mobile: { options: 0.05, panel: 0.15, items: 0.45 },
+  quick: { options: 0, panel: 0.05, items: 0.15 },
 } as const;
 
 export interface IntroHandlers {

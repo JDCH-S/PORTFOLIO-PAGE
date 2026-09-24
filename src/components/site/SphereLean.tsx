@@ -19,7 +19,7 @@ export default function SphereLean() {
         sphere.setLeanTarget(0, 0);
         return;
       }
-      const el = state.anchors[state.hover as keyof typeof state.anchors] ?? document.querySelector<HTMLElement>(`[data-item="${state.hover}"]`);
+      const el = state.anchors[state.hover] ?? document.querySelector<HTMLElement>(`[data-item="${state.hover}"]`);
       if (!el) return;
       const r = el.getBoundingClientRect();
       const c = sphereCentre();

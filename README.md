@@ -49,8 +49,11 @@ Useful query parameters while reviewing (they work on `/` and `/sphere`):
 - The page opens on the hologram alone. `IntroSequence.tsx` runs `src/lib/sequence.ts`: sparks
   converge, shells assemble outer to inner, the vortex ignites, `INITIALISING` types, the name
   decodes. Skippable; remembered in localStorage; a 1s version on later visits; no intro with
-  reduced motion. Clicking the sphere (or a nav label, or Enter) opens the core: `Emergence.tsx`
-  draws the beams and materialises the modules; Esc or the **core** control collapses them.
+  reduced motion.
+- Drag the sphere (mouse or finger) to rotate it; it coasts to a stop (`useSpinDrag.ts`,
+  applied in `SphereRig.tsx`). Tap it to step through the views held in `siteStore.ts`:
+  core → menu (three option cards on beams) → module (only the chosen module, the other two
+  as chips). Esc or another tap on the sphere steps back. `Emergence.tsx` times the reveals.
 - `components/modules/*` render the three modules from `content.ts`; `ItemButton` handles hover,
   focus and the click that fires the fragment stream and opens `components/detail/DetailView`.
 

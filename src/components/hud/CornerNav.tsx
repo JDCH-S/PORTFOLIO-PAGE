@@ -9,17 +9,17 @@ import { useSphereStore } from "@/components/sphere/sphereStore";
 export default function CornerNav({ className = "", onSelect }: { className?: string; onSelect?: (id: ModuleId) => void }) {
   const active = useSiteStore((s) => s.activeModule);
   const view = useSiteStore((s) => s.view);
-  const openModules = useSiteStore((s) => s.openModules);
-  const closeModules = useSiteStore((s) => s.closeModules);
-  const open = view === "modules";
+  const openModule = useSiteStore((s) => s.openModule);
+  const closeToCore = useSiteStore((s) => s.closeToCore);
+  const open = view === "module";
   return (
     <nav aria-label="Modules" className={`flex items-center gap-1 ${className}`}>
       <button
         type="button"
-        aria-pressed={!open}
-        onClick={() => (open ? closeModules() : openModules())}
+        aria-pressed={view === "core"}
+        onClick={() => closeToCore()}
         className={`label flex h-11 items-center gap-2 rounded-[2px] border px-3 transition-colors duration-[240ms] ${
-          open ? "border-transparent text-steel hover:border-steel-line hover:text-fg" : "border-gold text-gold-hot"
+          view === "core" ? "border-gold text-gold-hot" : "border-transparent text-steel hover:border-steel-line hover:text-fg"
         }`}
       >
         <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-gold" />
@@ -33,7 +33,7 @@ export default function CornerNav({ className = "", onSelect }: { className?: st
             type="button"
             aria-current={on ? "true" : undefined}
             onClick={() => {
-              openModules(m.id);
+              openModule(m.id);
               useSphereStore.getState().pulseToward(0, 0, 0.5);
               onSelect?.(m.id);
               // focus the module once it has emerged
@@ -42,7 +42,7 @@ export default function CornerNav({ className = "", onSelect }: { className?: st
                 if (!el) return;
                 el.scrollIntoView({ behavior: "smooth", block: "nearest" });
                 el.querySelector<HTMLElement>("button, a, [tabindex]")?.focus({ preventScroll: true });
-              }, open ? 0 : 900);
+              }, open ? 0 : 800);
             }}
             className={`label flex h-11 items-center gap-2 rounded-[2px] border px-3 transition-colors duration-[240ms] ${
               on ? "border-gold text-gold-hot" : "border-transparent text-steel hover:border-steel-line hover:text-fg"

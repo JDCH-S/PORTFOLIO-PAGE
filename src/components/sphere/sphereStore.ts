@@ -1,6 +1,21 @@
 import { create } from "zustand";
 
 /**
+ * Drag-to-rotate state, shared between the pointer handlers (useSpinDrag) and the rig.
+ * A plain object on purpose: it changes every pointer move and every frame, and nothing
+ * in React needs to re-render for it.
+ */
+export const spin = {
+  active: false,
+  /** accumulated rotation, radians */
+  yaw: 0,
+  pitch: 0,
+  /** inertia after release, radians per second */
+  vYaw: 0,
+  vPitch: 0,
+};
+
+/**
  * Imperative control surface for the sphere, used by later phases
  * (pulse toward a hovered module, shrink into a corner, etc.), plus
  * live telemetry for the debug panel and caption.

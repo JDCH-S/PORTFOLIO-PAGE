@@ -71,13 +71,21 @@ small 14/22 · body 16/26 · h3 20/28 (display) · h2 28/34 (display) · h1 40/4
   easing out `cubic-bezier(.2,.8,.2,1)`, in-out `cubic-bezier(.65,0,.35,1)`; stagger 60ms;
   `prefers-reduced-motion` removes all movement and keeps opacity fades ≤ 240ms.
 
-## 2.4 The core is the default view
+## 2.4 The core is the default view; content emerges in two steps
 
-The page opens on the hologram alone: the sphere, the name, the corner nav and a
-"enter the core" prompt. Nothing else is on screen. Clicking or tapping the sphere (or a
-nav label, or Enter) pulses the core, draws the beams and materialises the three modules
-around it; Esc or the **core** control collapses everything back to the lone hologram.
-The layouts below describe the *opened* state.
+The page opens on the hologram alone: the sphere, the name, the corner nav and an
+"enter the core · drag to rotate" prompt. Dragging the sphere (mouse or finger) rotates it,
+with inertia on release. Tapping it steps through three views:
+
+1. **core**: the hologram alone.
+2. **menu**: three option cards emerge around the sphere (Projects left, Agents right,
+   Systems below on desktop; a list under the sphere on mobile), each on its own beam.
+3. **module**: clicking an option opens only that module. On desktop the sphere and the two
+   remaining options move to the left column and the module fills the right; on mobile the
+   sphere docks into the sticky header and the module is one of three swipeable tabs.
+
+Tapping the sphere goes back one step (module → menu → core); Esc does the same. The corner
+nav can jump straight to a module. The layouts below describe the menu and module states.
 
 ## 3. Layouts
 

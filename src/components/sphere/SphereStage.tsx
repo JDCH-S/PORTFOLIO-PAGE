@@ -18,11 +18,13 @@ export interface SphereStageProps {
   className?: string;
   /** see SphereScene: screen-blend inside, or let the host layer blend */
   blend?: boolean;
+  /** drag-to-rotate handled by the scene itself */
+  spin?: boolean;
 }
 
 const noopSubscribe = () => () => {};
 
-export default function SphereStage({ debug = false, className, blend = true }: SphereStageProps) {
+export default function SphereStage({ debug = false, className, blend = true, spin = false }: SphereStageProps) {
   // false during SSR and hydration, true once mounted on the client
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
@@ -46,5 +48,5 @@ export default function SphereStage({ debug = false, className, blend = true }: 
   if (!caps) return <StaticSphere loading className={className} />;
   if (caps.tier === "static") return <StaticSphere className={className} />;
 
-  return <SphereScene tier={caps.tier} coarsePointer={caps.coarsePointer} dpr={caps.dpr} debug={debug} className={className} blend={blend} />;
+  return <SphereScene tier={caps.tier} coarsePointer={caps.coarsePointer} dpr={caps.dpr} debug={debug} className={className} blend={blend} spin={spin} />;
 }
