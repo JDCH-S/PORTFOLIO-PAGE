@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type { ModuleId } from "@/content/types";
 
 export type SitePhase = "boot" | "intro" | "idle" | "detail";
+/** core = the hologram alone (default); modules = the content has emerged around it */
+export type SiteView = "core" | "modules";
 
 /** Intro reveal steps, in order. Components reveal when `step >= their step`. */
 export type IntroStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -9,6 +11,7 @@ export type IntroStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface SiteState {
   phase: SitePhase;
+  view: SiteView;
   step: IntroStep;
   /** true when the full intro was already seen on this device */
   introSeen: boolean;
@@ -18,6 +21,10 @@ export interface SiteState {
   /** id of the hovered/focused module or item, for the sphere lean */
   hover: string | null;
   setPhase: (phase: SitePhase) => void;
+  /** open the content around the sphere, optionally landing on a module */
+  openModules: (module?: ModuleId) => void;
+  /** back to the hologram alone */
+  closeModules: () => void;
   setStep: (step: IntroStep) => void;
   setIntroSeen: (seen: boolean) => void;
   setActiveModule: (m: ModuleId) => void;
@@ -31,12 +38,15 @@ export interface SiteState {
 
 export const useSiteStore = create<SiteState>((set) => ({
   phase: "boot",
+  view: "core",
   step: 0,
   introSeen: false,
   activeModule: "projects",
   activeItem: null,
   hover: null,
   setPhase: (phase) => set({ phase }),
+  openModules: (module) => set((s) => ({ view: "modules", activeModule: module ?? s.activeModule })),
+  closeModules: () => set({ view: "core", activeItem: null, phase: "idle", hover: null }),
   setStep: (step) => set({ step }),
   setIntroSeen: (introSeen) => set({ introSeen }),
   setActiveModule: (activeModule) => set({ activeModule }),

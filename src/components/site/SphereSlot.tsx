@@ -11,8 +11,14 @@ import { useSphereStore } from "@/components/sphere/sphereStore";
 export default function SphereSlot({ className = "", style, fill = 0.92 }: { className?: string; style?: CSSProperties; fill?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const phase = useSiteStore((s) => s.phase);
+  const view = useSiteStore((s) => s.view);
   useEffect(() => {
     if (phase === "detail") return;
+    if (view === "core") {
+      // the lone hologram: default centred framing
+      useSphereStore.getState().setFrame(null);
+      return;
+    }
     const el = ref.current;
     if (!el) return;
     const push = () => {
@@ -27,6 +33,6 @@ export default function SphereSlot({ className = "", style, fill = 0.92 }: { cla
       ro.disconnect();
       window.removeEventListener("resize", push);
     };
-  }, [phase, fill]);
+  }, [phase, view, fill]);
   return <div ref={ref} aria-hidden className={`pointer-events-none ${className}`} style={style} />;
 }

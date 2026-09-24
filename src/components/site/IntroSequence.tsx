@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
 import { readIntroSeen, writeIntroSeen } from "@/lib/introStorage";
-import { runIntro, TIMELINES } from "@/lib/sequence";
+import { INTRO_LAST_STEP, runIntro, TIMELINES } from "@/lib/sequence";
 import Typewriter from "@/components/ui/Typewriter";
 
 type Mode = "full" | "quick" | "none";
@@ -45,7 +45,7 @@ export default function IntroSequence({ desktop, reduced }: { desktop: boolean; 
       started.current = true;
       sphere.setIntro({ converge: 1, assemble: 1, ignite: 1 });
       sphere.setHidePoster(false);
-      setStep(6);
+      setStep(INTRO_LAST_STEP);
       setPhase("idle");
     };
     if (mode === "none" || tier === "static") {
@@ -86,7 +86,7 @@ export default function IntroSequence({ desktop, reduced }: { desktop: boolean; 
   return (
     <div className="pointer-events-none fixed inset-0 z-[70]" aria-live="polite">
       <div className="absolute -translate-x-1/2 text-center" style={{ left: cx, top: below }}>
-        <div className="label text-gold" style={{ opacity: step >= 2 && step < 5 ? 1 : 0, transition: "opacity 240ms var(--ease-out)" }}>
+        <div className="label text-gold" style={{ opacity: step >= 2 && step < 3 ? 1 : 0, transition: "opacity 240ms var(--ease-out)" }}>
           <Typewriter text="INITIALISING" active={step >= 2} />
         </div>
       </div>

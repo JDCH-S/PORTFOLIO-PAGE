@@ -11,6 +11,8 @@ import SphereLean from "./SphereLean";
 import FragmentStream from "./FragmentStream";
 import DesktopLayout from "./DesktopLayout";
 import MobileLayout from "./MobileLayout";
+import Emergence from "./Emergence";
+import CoreButton from "./CoreButton";
 
 const noop = () => () => {};
 
@@ -31,9 +33,11 @@ export default function Site() {
       {mounted ? (
         <>
           <IntroSequence desktop={isDesktop} reduced={reduced} />
+          <Emergence desktop={isDesktop} />
           <SphereLean />
           <FragmentStream />
           {isDesktop ? <DesktopLayout /> : <MobileLayout />}
+          <CoreButton coarse={!isDesktop} />
           <DetailView />
         </>
       ) : null}

@@ -23,6 +23,8 @@ const EMBLEM = 40;
 export default function MobileLayout() {
   const step = useSiteStore((s) => s.step);
   const phase = useSiteStore((s) => s.phase);
+  const view = useSiteStore((s) => s.view);
+  const open = view === "modules";
   const active = useSiteStore((s) => s.activeModule);
   const setActive = useSiteStore((s) => s.setActiveModule);
   const reduced = useReducedMotion();
@@ -34,6 +36,12 @@ export default function MobileLayout() {
   // sphere framing: follow the hero, then interpolate into the header emblem while scrolling
   useEffect(() => {
     if (phase === "detail") return;
+    if (!open) {
+      // the lone hologram: centred in the viewport
+      useSphereStore.getState().setFrame(null);
+      window.scrollTo({ top: 0 });
+      return;
+    }
     const push = () => {
       const h = hero.current;
       const e = emblem.current;
@@ -58,7 +66,7 @@ export default function MobileLayout() {
       window.removeEventListener("scroll", push);
       window.removeEventListener("resize", push);
     };
-  }, [phase]);
+  }, [phase, open]);
 
   const index = ORDER.indexOf(active);
   const go = useCallback(
@@ -74,6 +82,18 @@ export default function MobileLayout() {
     if (swipe < -60) go(index + 1);
     else if (swipe > 60) go(index - 1);
   };
+
+  if (!open) {
+    // core view: just the name over the hologram; the CoreButton draws the prompt under the sphere
+    return (
+      <div className="relative z-10 h-dvh overflow-hidden">
+        <header className="px-4 pt-3 transition-opacity duration-[480ms]" style={{ opacity: step >= 2 ? 1 : 0, paddingTop: "calc(12px + env(safe-area-inset-top, 0px))" }}>
+          <Decode as="h1" text={profile.name.toUpperCase()} active={step >= 3} reduced={reduced} className="truncate font-display text-[17px] leading-[22px] font-semibold tracking-[0.06em] text-gold-hot" />
+          <p className="label truncate text-steel">{profile.role}</p>
+        </header>
+      </div>
+    );
+  }
 
   return (
     <div className="relative z-10 min-h-dvh">

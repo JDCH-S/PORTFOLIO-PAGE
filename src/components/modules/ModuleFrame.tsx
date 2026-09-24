@@ -44,7 +44,9 @@ export default function ModuleFrame({ id, index, title, count, status, children,
           ? { opacity: 1, transition: { duration: 0.24 } }
           : { opacity: [0, 1, 0.35, 1, 0.6, 1], transition: { duration: 0.6, delay, times: [0, 0.25, 0.4, 0.55, 0.7, 1] } },
       }}
-      className={`min-h-0 ${className}`}
+      className={`min-h-0 ${shown ? "" : "pointer-events-none"} ${className}`}
+      aria-hidden={!shown}
+      inert={!shown}
     >
       <Panel
         ref={ref}

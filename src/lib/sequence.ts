@@ -27,6 +27,16 @@ export const TIMELINES = {
 
 export type IntroStepValue = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
+/** The load sequence stops on the bare hologram (step 3); the content emerges on interaction. */
+export const INTRO_LAST_STEP: IntroStepValue = 3;
+
+/** Emergence of the modules after the core is opened: seconds until beams, panels, items. */
+export const EMERGE = {
+  desktop: { beams: 0.05, panels: 0.45, items: 0.85 },
+  mobile: { beams: 0.05, panels: 0.3, items: 0.6 },
+  quick: { beams: 0, panels: 0.12, items: 0.24 },
+} as const;
+
 export interface IntroHandlers {
   onIntro: (v: { converge: number; assemble: number; ignite: number }) => void;
   onStep: (step: IntroStepValue) => void;
@@ -52,7 +62,7 @@ export function runIntro(tl: IntroTimeline, h: IntroHandlers) {
     done = true;
     cancelAnimationFrame(raf);
     h.onIntro({ converge: 1, assemble: 1, ignite: 1 });
-    setStep(6);
+    setStep(INTRO_LAST_STEP);
     h.onDone();
   };
   const tick = () => {
@@ -62,10 +72,8 @@ export function runIntro(tl: IntroTimeline, h: IntroHandlers) {
     if (t >= tl.assemble[0]) setStep(1);
     if (t >= tl.text) setStep(2);
     if (t >= tl.name) setStep(3);
-    if (t >= tl.beams) setStep(4);
-    if (t >= tl.panels) setStep(5);
-    if (t >= tl.items) setStep(6);
-    if (t >= tl.total) {
+    // the sequence ends shortly after the name has decoded; beams and panels wait for the user
+    if (t >= tl.name + 0.7) {
       finish();
       return;
     }
