@@ -28,7 +28,7 @@ function makeMaterialParams(): THREE.ShaderMaterialParameters {
 }
 
 /** Camera-facing radial glow at the centre: the brightest point of the sphere. */
-export default function CoreGlow({ look }: { look: SphereLook }) {
+export default function CoreGlow({ look, timeOffset = 0 }: { look: SphereLook; timeOffset?: number }) {
   const params = useMemo(() => makeMaterialParams(), []);
   const material = useRef<THREE.ShaderMaterial>(null);
 
@@ -45,7 +45,7 @@ export default function CoreGlow({ look }: { look: SphereLook }) {
     (u.uColorHot.value as THREE.Color).set(look.colorHot);
   }, [look.coreSize, look.coreBrightness, look.haloStrength, look.intensity, look.colorBase, look.colorHot]);
 
-  const time = useRef(0);
+  const time = useRef(timeOffset);
   useFrame((_, dt) => {
     const m = material.current;
     if (!m) return;

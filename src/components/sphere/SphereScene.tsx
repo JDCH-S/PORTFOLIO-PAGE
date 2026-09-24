@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { PerformanceMonitor } from "@react-three/drei";
 import type { QualityTier } from "@/lib/tier";
 import { DEFAULT_LOOK, TIER_BUDGETS, type SphereLook, type Tier } from "./config";
 import Fragments from "./Fragments";
@@ -95,10 +96,19 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   const [fps, setFps] = useState(0);
   const [visible, setVisible] = useState(false);
   const onFirstFrame = useCallback(() => setVisible(true), []);
+  // runtime regression: if frames drop, lower the pixel ratio, then the tier
+  const [dprScale, setDprScale] = useState(1);
+  const onDecline = useCallback(() => setDprScale((s) => Math.max(0.6, s * 0.8)), []);
+  const onFallback = useCallback(() => setTier((t) => (t === "high" ? "medium" : "low")), []);
   const budget = TIER_BUDGETS[tier];
   const stats = useMemo(() => ({ fragments, fps }), [fragments, fps]);
   const onBuilt = useCallback((n: number) => setFragments(n), []);
-  const captureMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("capture");
+  const query = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const captureMode = !!query?.has("capture");
+  // a forced ?tier= pins the tier (review + screenshot harness), so no runtime regression
+  const pinned = !!query?.get("tier");
+  // ?t=seconds starts the animation clocks mid-flight (screenshot harness / review)
+  const timeOffset = Math.max(0, Number(query?.get("t") ?? 0)) || 0;
   const showDebug = debug && !captureMode;
 
   return (
@@ -107,7 +117,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
       data-tier={tier}
     >
       <Canvas
-        dpr={[budget.dpr[0], Math.min(budget.dpr[1], dpr)]}
+        dpr={[budget.dpr[0], Math.max(1, Math.min(budget.dpr[1], dpr) * dprScale)]}
         camera={{ fov: 40, near: 0.1, far: 50, position: [0, 0, 3.8] }}
         gl={{ antialias: false, alpha: false, powerPreference: "high-performance", stencil: false, depth: false }}
         flat
@@ -118,12 +128,13 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
         }}
       >
         <CameraFit />
+        {!pinned ? <PerformanceMonitor flipflops={3} onDecline={onDecline} onFallback={onFallback} /> : null}
         <Suspense fallback={null}>
-          <SphereRig look={look} coarsePointer={coarsePointer}>
-            <Fragments look={look} budget={budget} onBuilt={onBuilt} />
-            <Vortex look={look} budget={budget} />
-            <CoreGlow look={look} />
-            <Particles look={look} budget={budget} />
+          <SphereRig look={look} coarsePointer={coarsePointer} timeOffset={timeOffset}>
+            <Fragments look={look} budget={budget} onBuilt={onBuilt} timeOffset={timeOffset} />
+            <Vortex look={look} budget={budget} timeOffset={timeOffset} />
+            <CoreGlow look={look} timeOffset={timeOffset} />
+            <Particles look={look} budget={budget} timeOffset={timeOffset} />
           </SphereRig>
           <Effects look={look} budget={budget} />
         </Suspense>

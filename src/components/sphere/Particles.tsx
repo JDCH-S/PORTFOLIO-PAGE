@@ -29,7 +29,7 @@ function makeMaterialParams(): THREE.ShaderMaterialParameters {
 }
 
 /** Floating dust and sparks inside and around the sphere. */
-export default function Particles({ look, budget }: { look: SphereLook; budget: TierBudget }) {
+export default function Particles({ look, budget, timeOffset = 0 }: { look: SphereLook; budget: TierBudget; timeOffset?: number }) {
   const count = Math.max(10, Math.round(budget.particles * look.particleDensity));
   const dpr = useThree((s) => s.viewport.dpr);
 
@@ -76,7 +76,7 @@ export default function Particles({ look, budget }: { look: SphereLook; budget: 
     (u.uColorHot.value as THREE.Color).set(look.colorHot);
   }, [dpr, look.particleSize, look.particleSpeed, look.particleBrightness, look.intensity, look.colorBase, look.colorHot]);
 
-  const time = useRef(0);
+  const time = useRef(timeOffset);
   useFrame((_, dt) => {
     const m = material.current;
     if (!m) return;

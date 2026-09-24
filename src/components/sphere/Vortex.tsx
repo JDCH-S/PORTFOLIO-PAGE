@@ -32,7 +32,7 @@ function makeMaterialParams(): THREE.ShaderMaterialParameters {
 }
 
 /** Swirling ribbons of light converging on the core. One instanced draw call. */
-export default function Vortex({ look, budget }: { look: SphereLook; budget: TierBudget }) {
+export default function Vortex({ look, budget, timeOffset = 0 }: { look: SphereLook; budget: TierBudget; timeOffset?: number }) {
   const spirals = Math.max(2, Math.round(budget.ribbons * look.ribbonDensity));
   const ringCount = Math.max(1, Math.round(budget.rings * look.ribbonDensity));
   const ribbons = spirals + ringCount;
@@ -86,7 +86,7 @@ export default function Vortex({ look, budget }: { look: SphereLook; budget: Tie
     (u.uColorHot.value as THREE.Color).set(look.colorHot);
   }, [look.swirlSpeed, look.vortexRadius, look.vortexWidth, look.vortexBrightness, look.intensity, look.colorBase, look.colorHot]);
 
-  const time = useRef(0);
+  const time = useRef(timeOffset);
   useFrame((_, dt) => {
     const m = material.current;
     if (!m) return;

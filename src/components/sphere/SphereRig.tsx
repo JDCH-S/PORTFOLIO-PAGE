@@ -10,7 +10,7 @@ import type { SphereLook } from "./config";
  * The group that carries the whole sphere: pointer / orientation tilt,
  * breathing pulse, and the imperative pulse/scale/offset targets from the store.
  */
-export default function SphereRig({ look, coarsePointer, children }: { look: SphereLook; coarsePointer: boolean; children: ReactNode }) {
+export default function SphereRig({ look, coarsePointer, timeOffset = 0, children }: { look: SphereLook; coarsePointer: boolean; timeOffset?: number; children: ReactNode }) {
   const group = useRef<THREE.Group>(null);
   const size = useThree((s) => s.size);
   const target = useRef({ x: 0, y: 0 }); // normalised -1..1
@@ -65,7 +65,7 @@ export default function SphereRig({ look, coarsePointer, children }: { look: Sph
     };
   }, [size.width, size.height, coarsePointer]);
 
-  const time = useRef(0);
+  const time = useRef(timeOffset);
   const curRef = useRef({ rx: 0, ry: 0, scale: 1, ox: 0, oy: 0 });
 
   useFrame((_, dt) => {

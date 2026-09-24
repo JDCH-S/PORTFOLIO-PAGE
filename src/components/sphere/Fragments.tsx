@@ -11,6 +11,7 @@ export interface FragmentsProps {
   look: SphereLook;
   budget: TierBudget;
   onBuilt?: (count: number) => void;
+  timeOffset?: number;
 }
 
 function makeMaterialParams(): THREE.ShaderMaterialParameters {
@@ -50,7 +51,7 @@ function makeMaterialParams(): THREE.ShaderMaterialParameters {
 }
 
 /** All shells of light fragments in one instanced draw call. */
-export default function Fragments({ look, budget, onBuilt }: FragmentsProps) {
+export default function Fragments({ look, budget, onBuilt, timeOffset = 0 }: FragmentsProps) {
   const count = Math.round(budget.fragments * look.density);
 
   const built = useMemo(
@@ -105,8 +106,8 @@ export default function Fragments({ look, budget, onBuilt }: FragmentsProps) {
     });
   }, [built, look.innerBrightness, look.outerBrightness]);
 
-  const time = useRef(0);
-  const angles = useRef<number[]>(new Array(MAX_SHELLS).fill(0));
+  const time = useRef(timeOffset);
+  const angles = useRef<number[]>(built.shells.map((s) => s.speed * look.rotationSpeed * timeOffset).concat(new Array(MAX_SHELLS).fill(0)).slice(0, MAX_SHELLS));
   const tmpQ = useRef(new THREE.Quaternion());
 
   useFrame((_, dt) => {
