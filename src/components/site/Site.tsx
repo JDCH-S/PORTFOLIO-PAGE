@@ -32,7 +32,8 @@ export default function Site() {
   const view = useSiteStore((s) => s.view);
   // while an item is open the parked sphere rises above the detail backdrop (corner on desktop, header emblem on mobile);
   // on a phone the sphere also passes over the sticky header while it docks into the emblem
-  const detail = useSiteStore((s) => s.phase) === "detail";
+  const phase = useSiteStore((s) => s.phase);
+  const detail = phase === "detail";
   const layer = detail ? "z-[55]" : !isDesktop && view === "module" ? "z-[25]" : "z-0";
   return (
     <LazyMotion features={loadFeatures} strict>
@@ -52,8 +53,8 @@ export default function Site() {
               <SphereLean />
               <FragmentStream />
               <CoreButton coarse={!isDesktop} />
-              {/* while the detail dialog is open the page behind it is inert for every input */}
-              <div inert={detail}>{isDesktop ? <DesktopLayout /> : <MobileLayout />}</div>
+              {/* the page is inert during the load sequence and while the detail dialog is open */}
+              <div inert={phase !== "idle"}>{isDesktop ? <DesktopLayout /> : <MobileLayout />}</div>
               <DetailView />
             </>
           ) : null}

@@ -30,17 +30,26 @@ export default function Emergence({ desktop }: { desktop: boolean }) {
 
   // which input drove the last change decides whether focus is moved
   useEffect(() => {
+    let lastPointer = 0;
     const onPointer = () => {
+      lastPointer = performance.now();
       lastInput.current = "pointer";
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Tab" || e.key === "Enter" || e.key === "Escape" || e.key === " " || e.key.startsWith("Arrow")) lastInput.current = "keyboard";
     };
+    // screen readers, voice control and switch access activate with a synthetic click (detail 0)
+    const onClick = (e: MouseEvent) => {
+      // (a cancelled touch press also yields detail 0, hence the pointer check)
+      if (e.detail === 0 && performance.now() - lastPointer > 500) lastInput.current = "keyboard";
+    };
     window.addEventListener("pointerdown", onPointer, true);
     window.addEventListener("keydown", onKey, true);
+    window.addEventListener("click", onClick, true);
     return () => {
       window.removeEventListener("pointerdown", onPointer, true);
       window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("click", onClick, true);
     };
   }, []);
 

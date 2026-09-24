@@ -53,6 +53,8 @@ function layout(frame: { x: number; y: number; size: number } | null, w: number,
     const rim = { x: cx + ux * r * 0.985, y: cy + uy * r * 0.985 };
     const elbow = { x: cx + ux * (r + ELBOW), y: cy + uy * (r + ELBOW) };
     const side: Geo["side"] = s.angle === 90 ? "bottom" : ux < 0 ? "left" : "right";
+    // on short viewports the bottom callout's leader shortens so its blurb stays above the footer
+    if (side === "bottom") elbow.y = Math.min(elbow.y, h - 128);
     const label = side === "bottom" ? { x: elbow.x, y: elbow.y + 8 } : { x: elbow.x + (side === "right" ? ARM + 6 : -(ARM + 6)), y: elbow.y };
     return { id: s.id, rim, elbow, side, label, angle: s.angle };
   });

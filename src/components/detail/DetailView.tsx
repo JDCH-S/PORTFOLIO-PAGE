@@ -104,7 +104,7 @@ export default function DetailView() {
               role="dialog"
               aria-modal="true"
               aria-labelledby="detail-title"
-              className="glass-solid absolute inset-x-[8vw] top-[9vh] bottom-[7vh] flex flex-col rounded-[2px] border border-gold shadow-glow-strong"
+              className="glass-solid absolute inset-x-[max(8vw,100px)] top-[9vh] bottom-[7vh] flex flex-col rounded-[2px] border border-gold shadow-glow-strong"
               initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
@@ -120,7 +120,7 @@ export default function DetailView() {
                   </button>
                 </div>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6 [scrollbar-width:thin]">
+              <div tabIndex={0} role="region" aria-label="Item details" className="min-h-0 flex-1 overflow-y-auto px-8 py-6 outline-none [scrollbar-width:thin]">
                 <DetailSections item={item} />
               </div>
             </m.div>
@@ -148,7 +148,7 @@ export default function DetailView() {
                   close ×
                 </button>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-width:thin]" style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}>
+              <div tabIndex={0} role="region" aria-label="Item details" className="min-h-0 flex-1 overflow-y-auto px-4 py-4 outline-none [scrollbar-width:thin]" style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}>
                 <DetailSections item={item} />
               </div>
             </m.div>

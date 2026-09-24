@@ -48,7 +48,7 @@ export default function CornerNav({ className = "", onSelect }: { className?: st
               on ? "text-gold-hot" : "text-steel hover:text-fg"
             }`}
           >
-            <span className="text-steel-dim">{m.index}</span>
+            <span className="hidden text-steel-dim xl:inline">{m.index}</span>
             {m.title}
             <span aria-hidden className={`absolute inset-x-3 bottom-2 h-px bg-gold transition-opacity duration-[240ms] ${on ? "opacity-100" : "opacity-0"}`} />
           </button>

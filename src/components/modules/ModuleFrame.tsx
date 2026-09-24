@@ -71,7 +71,8 @@ export default function ModuleFrame({ id, index, title, count, status, children,
             {status ? <span className={`text-steel-dim ${count !== undefined ? "hidden xl:inline" : "hidden md:inline"}`}>{count !== undefined ? " · " : ""}{status}</span> : null}
           </span>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">{children}</div>
+        {/* a horizontal finger swipe that starts in here belongs to the mobile tab strip */}
+        <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin] [touch-action:pan-y]">{children}</div>
       </Panel>
     </m.div>
   );

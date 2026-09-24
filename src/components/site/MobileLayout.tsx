@@ -47,6 +47,8 @@ export default function MobileLayout() {
   const track = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const x = useMotionValue(0);
+  // a mouse drag on the strip must not end as a click on the card it started on
+  const dragging = useRef(false);
 
   // sphere framing per view
   useEffect(() => {
@@ -134,6 +136,9 @@ export default function MobileLayout() {
     const target = Math.max(0, Math.min(ORDER.length - 1, Math.round((-x.get() - info.velocity.x * 0.15) / width)));
     if (target === index) animate(x, -index * width, reduced ? { duration: 0 } : SPRING);
     else go(target);
+    window.setTimeout(() => {
+      dragging.current = false;
+    }, 0);
   };
 
   const nameBlock = (size: "lg" | "sm") => (
@@ -208,9 +213,9 @@ export default function MobileLayout() {
                 aria-label={m.title}
                 aria-current={on ? "true" : undefined}
                 onClick={() => go(i)}
-                className={`label flex h-11 flex-1 items-center justify-center gap-1.5 border-b-2 px-2 whitespace-nowrap transition-colors ${on ? "border-gold text-gold-hot" : "border-transparent text-steel"}`}
+                className={`label flex h-11 flex-1 items-center justify-center gap-1.5 border-b-2 px-2 whitespace-nowrap transition-colors max-[374px]:px-1 max-[374px]:tracking-[0.12em]! ${on ? "border-gold text-gold-hot" : "border-transparent text-steel"}`}
               >
-                <span className="hidden text-steel-dim min-[430px]:inline">{m.index}</span>
+                <span className="hidden text-steel-dim min-[490px]:inline">{m.index}</span>
                 {m.title}
               </button>
             );
@@ -231,7 +236,16 @@ export default function MobileLayout() {
           dragConstraints={{ left: -(ORDER.length - 1) * width, right: 0 }}
           dragElastic={0.2}
           dragMomentum={false}
+          onDragStart={() => {
+            dragging.current = true;
+          }}
           onDragEnd={onDragEnd}
+          onClickCapture={(e) => {
+            if (dragging.current) {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
           style={{ width: `${ORDER.length * 100}%`, x }}
         >
           {ORDER.map((id) => {

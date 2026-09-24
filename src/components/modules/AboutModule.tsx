@@ -27,7 +27,7 @@ export default function AboutModule({ className = "" }: { className?: string; co
         className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]"
       >
         {/* identity: a row on small screens, a column beside the bio on large ones */}
-        <div className="grid grid-cols-[72px_1fr] gap-4 lg:grid-cols-1">
+        <div className="grid grid-cols-1 gap-4 min-[360px]:grid-cols-[72px_minmax(0,1fr)] lg:grid-cols-1">
           <div className="relative aspect-square w-[72px] bg-bg-2/60 lg:w-full lg:max-w-[220px]">
             <Brackets size={10} />
             {about.photo ? (
@@ -45,7 +45,7 @@ export default function AboutModule({ className = "" }: { className?: string; co
             </span>
           </div>
           <div className="flex min-w-0 flex-col gap-3">
-            <dl className="grid grid-cols-[96px_1fr] gap-x-3 gap-y-1.5 text-[13px] leading-[20px]">
+            <dl className="grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px] leading-[20px]">
               {about.facts
                 .filter((f) => f.label !== "availability")
                 .map((f) => (

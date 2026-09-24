@@ -20,6 +20,8 @@ export default function CoreButton({ coarse = false }: { coarse?: boolean }) {
 
   // a tap right after a change would reverse it mid-glide
   const changedAt = useRef(0);
+  // when the last pointer press happened: a click with no press before it came from the keyboard or assistive tech
+  const pointerAt = useRef(0);
   useEffect(() => {
     changedAt.current = performance.now();
   }, [view, phase]);
@@ -63,11 +65,19 @@ export default function CoreButton({ coarse = false }: { coarse?: boolean }) {
         // while an item is open the dialog owns the keyboard; the parked sphere is pointer-only
         tabIndex={inDetail ? -1 : 0}
         aria-hidden={inDetail || undefined}
-        onClick={(e) => {
-          // pointer taps are handled by the drag hook; this is for keyboard activation
-          if (e.detail === 0) act();
+        onClick={() => {
+          // pointer taps are handled by the drag hook (a cancelled touch press reports detail 0 too)
+          if (performance.now() - pointerAt.current > 500) act();
         }}
-        {...drag}
+        onPointerDown={(e) => {
+          pointerAt.current = performance.now();
+          // a touch press must not turn into compatibility mouse events once the button has moved
+          if (e.pointerType === "touch") e.preventDefault();
+          drag.onPointerDown(e);
+        }}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={drag.onPointerUp}
+        onPointerCancel={drag.onPointerCancel}
         className={`pointer-events-auto absolute rounded-full outline-offset-8 focus-visible:outline focus-visible:outline-1 focus-visible:outline-gold ${isStatic ? "" : "cursor-grab active:cursor-grabbing"}`}
         style={{
           left: x - size / 2,
