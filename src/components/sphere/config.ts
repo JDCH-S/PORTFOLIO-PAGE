@@ -21,12 +21,18 @@ export interface TierBudget {
   bloomLevels: number;
   /** strip subdivisions along each fragment arc */
   arcSegments: number;
+  /** shells this tier can afford before each one gets too thin to read */
+  maxShells: number;
+  /** scale on the straight sector cuts (fewer on tiers with fewer fragments) */
+  cutScale: number;
+  /** minimum on-screen half width of a strip in pixels */
+  minPx: number;
 }
 
 export const TIER_BUDGETS: Record<Tier, TierBudget> = {
-  high: { fragments: 9000, ribbons: 24, rings: 4, ribbonSegments: 64, particles: 1600, dpr: [1, 2], bloomLevels: 7, arcSegments: 6 },
-  medium: { fragments: 5200, ribbons: 16, rings: 3, ribbonSegments: 48, particles: 900, dpr: [1, 1.5], bloomLevels: 6, arcSegments: 5 },
-  low: { fragments: 2800, ribbons: 10, rings: 2, ribbonSegments: 32, particles: 400, dpr: [1, 1.5], bloomLevels: 4, arcSegments: 4 },
+  high: { fragments: 9000, ribbons: 24, rings: 4, ribbonSegments: 64, particles: 1600, dpr: [1, 2], bloomLevels: 7, arcSegments: 6, maxShells: 8, cutScale: 1, minPx: 0.55 },
+  medium: { fragments: 6200, ribbons: 20, rings: 4, ribbonSegments: 48, particles: 1000, dpr: [1, 1.5], bloomLevels: 6, arcSegments: 5, maxShells: 6, cutScale: 1, minPx: 0.65 },
+  low: { fragments: 4200, ribbons: 16, rings: 3, ribbonSegments: 40, particles: 600, dpr: [1, 1.5], bloomLevels: 5, arcSegments: 4, maxShells: 4, cutScale: 0.5, minPx: 0.8 },
 };
 
 export type ToneMode = "none" | "aces" | "agx" | "neutral";
@@ -85,7 +91,7 @@ export interface SphereLook {
 }
 
 export const DEFAULT_LOOK: SphereLook = {
-  shells: 5,
+  shells: 6,
   density: 1,
   arcLength: 0.42,
   ragged: 1,
@@ -95,10 +101,10 @@ export const DEFAULT_LOOK: SphereLook = {
 
   fragmentWidth: 1,
   drift: 1,
-  innerBrightness: 1.0,
+  innerBrightness: 0.9,
   outerBrightness: 0.85,
-  depthFade: 0.3,
-  limb: 0.5,
+  depthFade: 0.22,
+  limb: 0.2,
 
   rotationSpeed: 1,
   flickerSpeed: 1.6,
@@ -109,12 +115,12 @@ export const DEFAULT_LOOK: SphereLook = {
 
   ribbonDensity: 1,
   swirlSpeed: 0.55,
-  vortexRadius: 0.5,
-  vortexBrightness: 0.9,
-  vortexWidth: 0.8,
-  coreSize: 0.14,
-  coreBrightness: 0.85,
-  haloStrength: 0.14,
+  vortexRadius: 0.56,
+  vortexBrightness: 1.0,
+  vortexWidth: 0.7,
+  coreSize: 0.11,
+  coreBrightness: 0.7,
+  haloStrength: 0.12,
 
   particleDensity: 1,
   particleSize: 1,
@@ -122,15 +128,15 @@ export const DEFAULT_LOOK: SphereLook = {
   particleBrightness: 1,
 
   colorBase: "#ffb23f",
-  colorHot: "#fff3d6",
+  colorHot: "#ffecc8",
   colorDeep: "#ff6a00",
-  intensity: 1.1,
+  intensity: 1.0,
 
   bloom: true,
-  bloomIntensity: 1.3,
-  bloomThreshold: 0.45,
-  bloomSmoothing: 0.3,
-  bloomRadius: 0.72,
+  bloomIntensity: 1.6,
+  bloomThreshold: 0.52,
+  bloomSmoothing: 0.22,
+  bloomRadius: 0.78,
   toneMapping: "aces",
 };
 

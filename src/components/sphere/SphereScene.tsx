@@ -40,7 +40,8 @@ function CameraFit() {
     const aspect = size.width / Math.max(1, size.height);
     const vHalf = Math.tan((cam.fov * Math.PI) / 360);
     const limitHalf = aspect < 1 ? vHalf * aspect : vHalf;
-    cam.position.set(0, 0, 1 / (0.72 * limitHalf));
+    const fill = aspect < 0.8 ? 0.88 : 0.72; // phones: the sphere fills most of the width
+    cam.position.set(0, 0, 1 / (fill * limitHalf));
     cam.lookAt(0, 0, 0);
     cam.updateProjectionMatrix();
   }, [camera, size.width, size.height]);
@@ -177,7 +178,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
       <div className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible ? "opacity-0" : "opacity-100"}`} aria-hidden>
         <StaticSphere loading />
       </div>
-      <div className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
+      <div className={`absolute inset-0 mix-blend-screen transition-opacity duration-700 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
       <Canvas
         dpr={[budget.dpr[0], Math.max(1, Math.min(budget.dpr[1], dpr) * dprScale)]}
         camera={{ fov: 40, near: 0.1, far: 50, position: [0, 0, 3.8] }}
@@ -186,7 +187,9 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
         frameloop="always"
         style={{ background: "transparent" }}
         onCreated={({ gl }) => {
-          gl.setClearColor("#04060f", 1);
+          // cleared to pure black and screen-blended over the page: screen(bg, black) = bg, so
+          // no tone-map-dependent seam, and later phases can draw a grid behind the sphere
+          gl.setClearColor("#000000", 1);
         }}
       >
         <CameraFit />

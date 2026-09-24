@@ -54,7 +54,7 @@ export function makeShells(count: number, seed: number, ragged: number, windows 
   const shells: ShellSpec[] = [];
   for (let i = 0; i < n; i++) {
     const t = n === 1 ? 1 : i / (n - 1); // 0 = innermost, 1 = outermost
-    const radius = n === 1 ? 1 : 0.54 + 0.46 * Math.pow(t, 0.9);
+    const radius = n === 1 ? 1 : 0.4 + 0.6 * Math.pow(t, 0.85);
     const axis = randomUnit(rand);
     // keep axes away from the pure view axis so rotation is visible
     axis.y += 0.35;
@@ -66,11 +66,11 @@ export function makeShells(count: number, seed: number, ragged: number, windows 
     for (let k = 0; k < ringCount; k++) rings.push(randomUnit(rand));
     shells.push({
       radius,
-      weight: 1.12 - 0.5 * t,
-      threshold: (-0.45 + 0.75 * t) * ragged,
+      weight: 1.05 - 0.35 * t,
+      threshold: (-0.25 + 0.65 * t) * ragged,
       axis,
       speed,
-      brightness: 1.15 - 0.4 * t,
+      brightness: 1.0 - 0.3 * t,
       drift: t > 0.55 ? (t - 0.55) / 0.45 : 0,
       rings,
       noiseOffset: rand() * 100,
@@ -181,8 +181,9 @@ export function buildFragments(
         const lat = Math.asin(THREE.MathUtils.clamp(dir.dot(axis), -1, 1));
         const sector = Math.floor(((lon + Math.PI) / (Math.PI * 2)) * 24);
         const band = Math.floor(((lat + Math.PI / 2) / Math.PI) * 14);
-        if (hash2(sector + 3, si * 17 + seed) < 0.16 * cuts) continue;
-        if (hash2(band + 41, si * 29 + seed) < 0.13 * cuts) continue;
+        const cutScale = cuts * (0.3 + 0.7 * st);
+        if (hash2(sector + 3, si * 17 + seed) < 0.16 * cutScale) continue;
+        if (hash2(band + 41, si * 29 + seed) < 0.13 * cutScale) continue;
       }
 
       // orientation: mostly aligned to the shell's ring axes, sometimes free
@@ -201,7 +202,7 @@ export function buildFragments(
       const baseBright = (0.55 + rand() * 0.7) * (0.6 + 0.4 * edge);
       const drift = shell.drift * (rand() < 0.35 ? rand() : 0);
 
-      if (kindRoll < 0.06) {
+      if (kindRoll < 0.09) {
         // ladder: two parallel arcs with ticks between them
         const len = arcLength * (0.6 + rand() * 1.2);
         const gapAng = 0.02 + rand() * 0.016;
@@ -220,7 +221,7 @@ export function buildFragments(
           push(c3, bn, r, gapAng, width * 0.8, fseed + 0.01 + k * 0.003, FRAG_DASH, baseBright * 1.05, drift, si);
           placed++;
         }
-      } else if (kindRoll < 0.11) {
+      } else if (kindRoll < 0.14) {
         // nested arcs: concentric arcs shrinking toward the inside
         const n = 3 + Math.floor(rand() * 2);
         const len0 = arcLength * (0.7 + rand() * 1.0);
@@ -230,7 +231,7 @@ export function buildFragments(
           push(c2, t2, r, len0 * (1 - k * 0.2), width * (1 - k * 0.15), fseed + k * 0.004, FRAG_ARC, baseBright * (1 - k * 0.12), drift, si);
           placed++;
         }
-      } else if (kindRoll < 0.15) {
+      } else if (kindRoll < 0.19) {
         // shard grid: a small block of data cells, one of them hot
         const cols = 2 + Math.floor(rand() * 2);
         const rows = 2 + Math.floor(rand() * 2);
@@ -246,7 +247,7 @@ export function buildFragments(
             placed++;
           }
         }
-      } else if (kindRoll < 0.23) {
+      } else if (kindRoll < 0.27) {
         // long thin ring arc: the structural "latitude lines" of the cage
         const total = arcLength * (2.2 + rand() * 3.2);
         const pieces = Math.max(2, Math.ceil(total / 0.3));
@@ -291,11 +292,11 @@ export function buildFragments(
         placed++;
       } else {
         // circuit trace: an L (or Z) of thin crisp lines with a pad at the corner
-        const width = (0.0045 + rand() * 0.004) * widthScale;
-        const l1 = arcLength * (0.12 + rand() * 0.3);
+        const width = (0.006 + rand() * 0.005) * widthScale;
+        const l1 = arcLength * (0.2 + rand() * 0.45);
         const l2 = arcLength * (0.08 + rand() * 0.2);
         advance(dir, tg, l1 / 2, c2, t2);
-        push(c2, t2, r, l1, width, fseed, FRAG_TRACE, baseBright, drift, si);
+        push(c2, t2, r, l1, width, fseed, FRAG_TRACE, baseBright * 1.3, drift, si);
         placed++;
         // corner at the end of the first leg
         advance(dir, tg, l1, c2, t2);
@@ -303,7 +304,7 @@ export function buildFragments(
         if (rand() < 0.5) bn.negate();
         const corner = c2.clone();
         advance(corner, bn, l2 / 2, c2, t2);
-        push(c2, t2, r, l2, width, fseed + 0.01, FRAG_TRACE, baseBright, drift, si);
+        push(c2, t2, r, l2, width, fseed + 0.01, FRAG_TRACE, baseBright * 1.3, drift, si);
         placed++;
         if (rand() < 0.6 && placed < budget) {
           // small pad

@@ -55,8 +55,8 @@ export default function Fragments({ look, budget, onBuilt, timeOffset = 0 }: Fra
   const count = Math.round(budget.fragments * look.density);
 
   const built = useMemo(
-    () => buildFragments(count, look.shells, look.arcLength, look.ragged, look.seed, budget.arcSegments, look.windows, look.cuts),
-    [count, look.shells, look.arcLength, look.ragged, look.seed, budget.arcSegments, look.windows, look.cuts],
+    () => buildFragments(count, Math.min(look.shells, budget.maxShells), look.arcLength, look.ragged, look.seed, budget.arcSegments, look.windows, look.cuts * budget.cutScale),
+    [count, look.shells, budget.maxShells, look.arcLength, look.ragged, look.seed, budget.arcSegments, look.windows, look.cuts, budget.cutScale],
   );
   const size = useThree((s) => s.size);
   const camera = useThree((s) => s.camera);
@@ -74,18 +74,20 @@ export default function Fragments({ look, budget, onBuilt, timeOffset = 0 }: Fra
     const m = material.current;
     if (!m) return;
     const u = m.uniforms;
-    u.uWidth.value = look.fragmentWidth;
+    // fewer fragments on lower tiers: slightly wider and brighter strips keep the glowing-volume read
+    u.uWidth.value = look.fragmentWidth * Math.pow(9000 / Math.max(500, built.count), 0.35);
+    u.uMinPx.value = budget.minPx;
     u.uDrift.value = look.drift;
     u.uFlickerSpeed.value = look.flickerSpeed;
     u.uFlickerAmount.value = look.flickerAmount;
     u.uDepthFade.value = look.depthFade;
     u.uLimb.value = look.limb;
     // fewer fragments on lower tiers keep the same overall luminance
-    u.uIntensity.value = look.intensity * Math.sqrt(9000 / Math.max(500, built.count));
+    u.uIntensity.value = look.intensity * Math.pow(9000 / Math.max(500, built.count), 0.25);
     (u.uColorBase.value as THREE.Color).set(look.colorBase);
     (u.uColorHot.value as THREE.Color).set(look.colorHot);
     (u.uColorDeep.value as THREE.Color).set(look.colorDeep);
-  }, [look.fragmentWidth, look.drift, look.flickerSpeed, look.flickerAmount, look.depthFade, look.limb, look.intensity, look.colorBase, look.colorHot, look.colorDeep, built.count]);
+  }, [look.fragmentWidth, look.drift, look.flickerSpeed, look.flickerAmount, look.depthFade, look.limb, look.intensity, look.colorBase, look.colorHot, look.colorDeep, built.count, budget.minPx]);
 
   useEffect(() => {
     const m = material.current;

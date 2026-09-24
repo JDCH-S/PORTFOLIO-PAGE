@@ -25,7 +25,7 @@ export default function StaticSphere({
         className="relative aspect-square w-[min(100vmin,1000px)]"
         style={{
           background:
-            "radial-gradient(circle at 50% 50%, rgba(255,241,207,0.5) 0%, rgba(255,178,63,0.3) 12%, rgba(255,106,0,0.1) 30%, rgba(255,106,0,0) 46%)",
+            "radial-gradient(circle at 50% 50%, rgba(255,241,207,0.3) 0%, rgba(255,178,63,0.2) 12%, rgba(255,106,0,0.08) 30%, rgba(255,106,0,0) 46%)",
           filter: loading ? "blur(6px)" : "none",
           opacity: loading ? 0.65 : 1,
           transition: "opacity 600ms ease, filter 600ms ease",
@@ -36,8 +36,8 @@ export default function StaticSphere({
           <img
             src="/sphere-static.png"
             alt=""
-            width={800}
-            height={800}
+            width={1200}
+            height={1200}
             decoding="async"
             loading="eager"
             fetchPriority={loading ? "low" : "high"}

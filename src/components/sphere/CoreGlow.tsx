@@ -16,6 +16,7 @@ function makeMaterialParams(): THREE.ShaderMaterialParameters {
       uBright: { value: 1.2 },
       uCoreFrac: { value: 0.16 },
       uHalo: { value: 0.22 },
+      uBreathe: { value: 0.22 * Math.PI * 2 },
       uColorBase: { value: new THREE.Color("#ffb23f") },
       uColorHot: { value: new THREE.Color("#fff3d6") },
     },
@@ -40,10 +41,11 @@ export default function CoreGlow({ look, timeOffset = 0 }: { look: SphereLook; t
     u.uSize.value = halo;
     u.uCoreFrac.value = look.coreSize / halo;
     u.uHalo.value = look.haloStrength;
+    u.uBreathe.value = look.breatheSpeed * Math.PI * 2;
     u.uBright.value = look.coreBrightness * look.intensity;
     (u.uColorBase.value as THREE.Color).set(look.colorBase);
     (u.uColorHot.value as THREE.Color).set(look.colorHot);
-  }, [look.coreSize, look.coreBrightness, look.haloStrength, look.intensity, look.colorBase, look.colorHot]);
+  }, [look.coreSize, look.coreBrightness, look.haloStrength, look.breatheSpeed, look.intensity, look.colorBase, look.colorHot]);
 
   const time = useRef(timeOffset);
   useFrame((_, dt) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { makeStripGeometry } from "./buildFragments";
 import { mulberry32 } from "./rng";
@@ -18,6 +18,8 @@ function makeMaterialParams(): THREE.ShaderMaterialParameters {
       uRadius: { value: 0.42 },
       uWidth: { value: 1 },
       uBright: { value: 1.4 },
+      uPxWorld: { value: 0.001 },
+      uMinPx: { value: 0.55 },
       uColorBase: { value: new THREE.Color("#ffb23f") },
       uColorHot: { value: new THREE.Color("#fff3d6") },
       uIntensity: { value: 1.35 },
@@ -58,7 +60,7 @@ export default function Vortex({ look, budget, timeOffset = 0 }: { look: SphereL
       // spirals: around a shared vortex axis, each tilted a little; rings: strongly tilted, crossing
       axis.set(rand() - 0.5, rand() - 0.5, rand() - 0.5).normalize();
       tiltQ.setFromAxisAngle(axis, isRing ? 0.45 + rand() * 0.6 : (rand() - 0.5) * 1.7);
-      q.setFromAxisAngle(vortexAxis, 0.9).multiply(tiltQ);
+      q.setFromAxisAngle(vortexAxis, 0.55).multiply(tiltQ);
       quat[i * 4 + 0] = q.x; quat[i * 4 + 1] = q.y; quat[i * 4 + 2] = q.z; quat[i * 4 + 3] = q.w;
     }
     g.setAttribute("iRib", new THREE.InstancedBufferAttribute(rib, 4));
@@ -72,6 +74,14 @@ export default function Vortex({ look, budget, timeOffset = 0 }: { look: SphereL
 
   const params = useMemo(() => makeMaterialParams(), []);
   const material = useRef<THREE.ShaderMaterial>(null);
+  const size = useThree((s) => s.size);
+  const camera = useThree((s) => s.camera);
+  useEffect(() => {
+    const m = material.current;
+    if (!m) return;
+    const fov = (camera as THREE.PerspectiveCamera).fov ?? 40;
+    m.uniforms.uPxWorld.value = (2 * Math.tan((fov * Math.PI) / 360)) / Math.max(1, size.height);
+  }, [camera, size.height]);
 
   useEffect(() => {
     const m = material.current;
@@ -96,12 +106,14 @@ export default function Vortex({ look, budget, timeOffset = 0 }: { look: SphereL
   });
 
   const mesh = useRef<THREE.Mesh>(null);
+  const yaw = useRef(timeOffset * 0.11 * 0.55);
   useFrame((_, dt) => {
     const m = mesh.current;
     if (!m) return;
     const step = Math.min(dt, 0.05);
-    m.rotation.y += step * 0.11 * look.swirlSpeed;
-    m.rotation.x = Math.sin(time.current * 0.13) * 0.35;
+    yaw.current += step * 0.11 * look.swirlSpeed;
+    m.rotation.y = yaw.current;
+    m.rotation.x = Math.sin(time.current * 0.13) * 0.18;
   });
 
   return (

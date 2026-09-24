@@ -31,13 +31,14 @@ export default function Effects({ look, budget }: { look: SphereLook; budget: Ti
   // constructor args are captured once; later changes go through the setters below
   const [initial] = useState(() => ({ threshold: look.bloomThreshold, smoothing: look.bloomSmoothing, radius: look.bloomRadius }));
   // the LOW tier skips the full-resolution luminance pass (cheaper bloom)
-  const cheap = budget.bloomLevels <= 4;
+  const cheap = budget.bloomLevels <= 5;
   useEffect(() => {
     setLuminancePass(bloomRef.current, !cheap);
   }, [cheap, look.bloom, budget.bloomLevels]);
   useEffect(() => {
-    tuneBloom(bloomRef.current, look.bloomThreshold, look.bloomSmoothing, look.bloomRadius);
-  }, [look.bloom, look.bloomThreshold, look.bloomSmoothing, look.bloomRadius, budget.bloomLevels]);
+    // the cheap tier has fewer mip levels, so a wider radius keeps the halo spreading
+    tuneBloom(bloomRef.current, look.bloomThreshold, look.bloomSmoothing, cheap ? Math.min(1, look.bloomRadius + 0.13) : look.bloomRadius);
+  }, [cheap, look.bloom, look.bloomThreshold, look.bloomSmoothing, look.bloomRadius, budget.bloomLevels]);
   if (!look.bloom && !tone) return null;
   return (
     <EffectComposer multisampling={0} enableNormalPass={false} depthBuffer={false}>
@@ -45,7 +46,7 @@ export default function Effects({ look, budget }: { look: SphereLook; budget: Ti
         <Bloom
           ref={bloomRef}
           mipmapBlur
-          intensity={cheap ? look.bloomIntensity * 0.65 : look.bloomIntensity}
+          intensity={cheap ? look.bloomIntensity * 0.85 : look.bloomIntensity}
           luminanceThreshold={initial.threshold}
           luminanceSmoothing={initial.smoothing}
           radius={initial.radius}

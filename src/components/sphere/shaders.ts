@@ -49,14 +49,14 @@ export const fragmentsVert = /* glsl */ `
     vec3 bn = normalize(cross(p, tp));       // across direction, on the shell surface
 
     // outer-shell fragments break off and drift outward, then settle back
-    float driftPhase = 0.5 + 0.5 * sin(uTime * 0.35 + iParams.w * 6.2831);
-    float drift = iStyle.z * uDrift * driftPhase * 0.16;
+    float driftPhase = pow(0.5 + 0.5 * sin(uTime * 0.28 + iParams.w * 6.2831), 3.0);
+    float drift = iStyle.z * uDrift * driftPhase * 0.22;
     float r = iParams.x + drift;
     float w = iParams.z * uWidth;
 
     // centre line of the strip, then extrude across it in view space so thin arcs
     // never vanish edge-on (arcs face the camera, shards lie flat on the shell)
-    vec3 centre = qrot(q, p * r);
+    vec3 centre = qrot(q, p * r + tp * drift * 0.6);
     vec3 tanW = qrot(q, tp);
     vec3 flatW = qrot(q, bn);
     vec4 cv4 = modelViewMatrix * vec4(centre, 1.0);
@@ -74,7 +74,7 @@ export const fragmentsVert = /* glsl */ `
 
     // per-fragment shimmer: smooth noise plus rare sparkles
     float n = noise1(uTime * uFlickerSpeed + iParams.w * 97.0);
-    float sparkle = pow(noise1(uTime * uFlickerSpeed * 1.7 + iParams.w * 31.0), 14.0) * 2.5;
+    float sparkle = pow(noise1(uTime * uFlickerSpeed * 1.7 + iParams.w * 31.0), 20.0) * 1.3;
     float flick = mix(1.0, 0.3 + 0.7 * n + sparkle, uFlickerAmount);
 
     // depth cue: far side dims, silhouette brightens so the sphere reads as a volume
@@ -83,7 +83,7 @@ export const fragmentsVert = /* glsl */ `
     float depth = mix(uDepthFade, 1.0, smoothstep(-1.0, 0.7, facing));
     float limb = pow(1.0 - abs(facing), 4.0) * uLimb;
 
-    vBright = iStyle.y * uShellBright[shell] * flick * (depth + limb) * (1.0 - drift * 3.0);
+    vBright = min(iStyle.y * uShellBright[shell] * flick * (depth + limb) * (1.0 - drift * 1.5), 2.4);
     vUvw = vec2(t, side);
     vType = iStyle.x;
     vRadial = iParams.x;
@@ -123,9 +123,11 @@ export const fragmentsFrag = /* glsl */ `
       along = smoothstep(0.0, 0.04, t) * smoothstep(1.0, 0.96, t);
       across = mix(soft, step(s, 0.6), 0.5);
     }
-    float b = vBright;
-    vec3 col = mix(uColorBase, uColorDeep, smoothstep(0.55, 1.05, vRadial));
-    col = mix(col, uColorHot, clamp((b - 0.85) * 0.9, 0.0, 1.0));
+    // outer shells stay amber-to-deep-orange; near-white is reserved for the inner shells and the core
+    float b = min(vBright, mix(2.4, 1.5, smoothstep(0.7, 1.0, vRadial)));
+    vec3 col = mix(uColorBase, uColorDeep, smoothstep(0.35, 1.0, vRadial));
+    float hotGate = 1.0 - smoothstep(0.62, 0.9, vRadial);
+    col = mix(col, uColorHot, clamp((b - 0.85) * 0.9, 0.0, 1.0) * hotGate);
     float alpha = across * along;
     gl_FragColor = vec4(col * b * uIntensity, alpha);
   }
@@ -139,6 +141,8 @@ export const vortexVert = /* glsl */ `
   uniform float uRadius;
   uniform float uWidth;
   uniform float uBright;
+  uniform float uPxWorld;
+  uniform float uMinPx;
 
   attribute vec4 iRib;   // phase, radius scale, seed, width
   attribute vec4 iQuat;  // ribbon orientation
@@ -158,7 +162,7 @@ export const vortexVert = /* glsl */ `
       return vec3(cos(ang) * rr, sin(ang) * rr, 0.0);
     }
     float turns = 1.3 + seed * 1.1;
-    float ang = phase + t * turns * 6.2831 - uTime * uSwirl * (0.8 + 0.5 * seed + 1.2 * t);
+    float ang = phase + t * turns * 6.2831 - uTime * uSwirl * (0.8 + 0.5 * seed) + 0.25 * t * sin(uTime * uSwirl * 0.6);
     float rr = uRadius * rs * pow(max(1.0 - t, 0.0), 0.72) + 0.012;
     float z = (sin(ang * 0.5 + seed * 6.28) * 0.4 + sin(t * 9.0 + uTime * 0.7 + seed * 3.0) * 0.18) * uRadius * rs * (1.0 - t);
     return vec3(cos(ang) * rr, sin(ang) * rr, z);
@@ -178,13 +182,14 @@ export const vortexVert = /* glsl */ `
     vec3 across = normalize(cross(tv, normalize(-pv)));   // face the camera
     float modelScale = length(modelViewMatrix[0].xyz);
     float w = iRib.w * uWidth * modelScale * (iKind > 0.5 ? 0.45 : (0.35 + 0.65 * (1.0 - t)));
+    w = max(w, 2.0 * uMinPx * uPxWorld * max(-pv.z, 0.05));
     vec3 posV = pv + across * side * w * 0.5;
 
     float flow = 0.6 + 0.4 * sin(t * 22.0 - uTime * 5.5 + seed * 12.0);
     float packet = pow(0.5 + 0.5 * sin(t * 7.0 - uTime * 2.6 + seed * 6.28), 6.0);  // energy packets travelling inward
     float shimmer = 0.75 + 0.25 * noise1(uTime * 2.0 + seed * 40.0);
-    float profile = iKind > 0.5 ? 0.55 : (0.18 + 1.9 * t * t);     // spirals brightest at the core
-    vGlow = uBright * flow * shimmer * profile * (1.0 + 0.8 * packet);
+    float profile = iKind > 0.5 ? 0.55 : (0.4 + 1.0 * t * t);      // spirals brightest at the core
+    vGlow = uBright * flow * shimmer * profile * (1.0 + 0.5 * packet);
     vUvw = vec2(iKind > 0.5 ? 0.5 : t, side);
     gl_Position = projectionMatrix * vec4(posV, 1.0);
   }
@@ -228,6 +233,7 @@ export const coreFrag = /* glsl */ `
   uniform float uBright;
   uniform float uCoreFrac;   // hot core radius as a fraction of the quad half-size
   uniform float uHalo;       // ambient halo strength
+  uniform float uBreathe;    // breathing angular speed, shared with the rig
   uniform vec3 uColorBase;
   uniform vec3 uColorHot;
   varying vec2 vUv;
@@ -237,7 +243,7 @@ export const coreFrag = /* glsl */ `
     float d = length(c) * 2.0;                 // 0 at centre, 1 at quad edge
     float ang = atan(c.y, c.x);
     float rays = 0.85 + 0.15 * sin(ang * 7.0 + uTime * 0.9) * sin(ang * 3.0 - uTime * 0.6);
-    float pulse = 0.9 + 0.1 * sin(uTime * 2.3) + 0.06 * noise1(uTime * 6.0);
+    float pulse = 0.9 + 0.1 * sin(uTime * uBreathe) + 0.06 * noise1(uTime * 6.0);
     float dc = d / max(uCoreFrac, 0.01);
     float hot = (exp(-dc * dc * 2.2) * 2.2 + exp(-dc * dc * 0.5) * 0.5) * rays;
     float halo = uHalo * exp(-d * d * 3.0);
@@ -269,11 +275,11 @@ export const particlesVert = /* glsl */ `
     p += 0.08 * vec3(sin(t * 0.7 + aSeed.x * 20.0), sin(t * 0.5 + aSeed.y * 20.0), sin(t * 0.6 + aSeed.z * 20.0));
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     float n = noise1(t * 2.5 + aSeed.y * 50.0);
-    float spark = pow(noise1(t * 3.0 + aSeed.z * 70.0), 18.0) * 6.0;
-    vBright = mix(0.25 + 0.75 * n, 0.15 + spark, aKind);
+    float spark = pow(noise1(t * 3.0 + aSeed.z * 70.0), 18.0) * 2.2;
+    vBright = min(mix(0.25 + 0.75 * n, 0.15 + spark, aKind), 2.0);
     vKind = aKind;
-    float size = mix(1.6, 2.6, aSeed.z) * uSize * uPixelRatio * (1.0 + spark * 0.4);
-    gl_PointSize = size * (6.0 / max(-mv.z, 0.5));
+    float size = mix(1.2, 2.2, aSeed.z) * uSize * uPixelRatio * (1.0 + spark * 0.12);
+    gl_PointSize = min(size * (5.0 / max(-mv.z, 2.0)), 3.2 * uPixelRatio);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -290,7 +296,7 @@ export const particlesFrag = /* glsl */ `
     float d = length(c) * 2.0;
     float a = smoothstep(1.0, 0.15, d);
     a *= a;
-    vec3 col = mix(uColorBase, uColorHot, clamp(vBright - 0.6, 0.0, 1.0));
+    vec3 col = mix(uColorBase, uColorHot, clamp((vBright - 1.2) * 0.6, 0.0, 1.0));
     gl_FragColor = vec4(col * vBright * uIntensity, a);
   }
 `;
