@@ -40,7 +40,7 @@ export default function Particles({ look, budget, timeOffset = 0 }: { look: Sphe
     const kind = new Float32Array(count);
     for (let i = 0; i < count; i++) {
       // volume: dense near the core, thinning out beyond the outer shell
-      const r = 0.15 + Math.pow(rand(), 0.6) * 1.1;
+      const r = 0.15 + Math.pow(rand(), 1.4) * 1.35;
       const z = rand() * 2 - 1;
       const a = rand() * Math.PI * 2;
       const rr = Math.sqrt(1 - z * z);

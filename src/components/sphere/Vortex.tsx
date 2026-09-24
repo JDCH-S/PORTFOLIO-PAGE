@@ -51,15 +51,17 @@ export default function Vortex({ look, budget, timeOffset = 0 }: { look: SphereL
     const tiltQ = new THREE.Quaternion();
     for (let i = 0; i < ribbons; i++) {
       const isRing = i >= spirals;
-      const thin = rand() < 0.55;
+      const hero = !isRing && i % 4 === 0; // a quarter of the spirals carry the light
       kind[i] = isRing ? 1 : 0;
       rib[i * 4 + 0] = rand() * Math.PI * 2;                                   // phase
       rib[i * 4 + 1] = 0.55 + rand() * 0.6;                                    // radius scale
       rib[i * 4 + 2] = rand();                                                 // seed
-      rib[i * 4 + 3] = thin || isRing ? 0.006 + rand() * 0.008 : 0.016 + rand() * 0.02; // width
-      // spirals: around a shared vortex axis, each tilted a little; rings: strongly tilted, crossing
+      rib[i * 4 + 3] = isRing ? 0.006 + rand() * 0.004 : hero ? 0.012 + rand() * 0.008 : 0.005 + rand() * 0.006; // width
+      // spirals share one inclined disc (front ribbons cross in front of the core, back ones behind);
+      // rings sit at two fixed tilts about the same axis, like gyro gimbals
       axis.set(rand() - 0.5, rand() - 0.5, rand() - 0.5).normalize();
-      tiltQ.setFromAxisAngle(axis, isRing ? 0.45 + rand() * 0.6 : (rand() - 0.5) * 1.7);
+      const ringIndex = i - spirals;
+      tiltQ.setFromAxisAngle(axis, isRing ? (ringIndex % 2 === 0 ? 0.35 : 1.35) : (rand() - 0.5) * 1.2);
       q.setFromAxisAngle(vortexAxis, 0.55).multiply(tiltQ);
       quat[i * 4 + 0] = q.x; quat[i * 4 + 1] = q.y; quat[i * 4 + 2] = q.z; quat[i * 4 + 3] = q.w;
     }
