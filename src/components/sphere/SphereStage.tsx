@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { detectCapabilities, tierOverrideFromUrl } from "@/lib/tier";
 import StaticSphere from "./StaticSphere";
 import { useSphereStore } from "./sphereStore";
@@ -35,6 +35,20 @@ export default function SphereStage({ debug = false, className, blend = true, sp
     return override ? { ...detected, tier: override } : detected;
   }, [mounted]);
 
+  // The renderer's bundle loads at idle time, after the poster and the name have painted:
+  // on a slow phone that is the difference between a 1s and a 6s LCP.
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    if (!caps || caps.tier === "static") return;
+    const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+    if (w.requestIdleCallback && w.cancelIdleCallback) {
+      const id = w.requestIdleCallback(() => setIdle(true), { timeout: 600 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const id = window.setTimeout(() => setIdle(true), 120);
+    return () => window.clearTimeout(id);
+  }, [caps]);
+
   const isStatic = caps?.tier === "static";
   useEffect(() => {
     if (isStatic) {
@@ -47,6 +61,7 @@ export default function SphereStage({ debug = false, className, blend = true, sp
   // Before hydration / detection: show the static emblem so there is never a blank hero.
   if (!caps) return <StaticSphere loading className={className} />;
   if (caps.tier === "static") return <StaticSphere className={className} />;
+  if (!idle) return <StaticSphere loading className={className} />;
 
   return <SphereScene tier={caps.tier} coarsePointer={caps.coarsePointer} dpr={caps.dpr} debug={debug} className={className} blend={blend} spin={spin} />;
 }
