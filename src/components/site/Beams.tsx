@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { modules } from "@/content/content";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
@@ -14,10 +13,9 @@ interface Beam {
   strong: boolean;
 }
 
-/** Which anchors the beams connect to in each view. */
+/** Which anchors the beams connect to: the open module's panel (the menu draws its own callouts). */
 function targets(view: string, active: string): { key: string; strong: boolean }[] {
-  if (view === "menu") return modules.map((m) => ({ key: `opt-${m.id}`, strong: true }));
-  if (view === "module") return [{ key: active, strong: true }, ...modules.filter((m) => m.id !== active).map((m) => ({ key: `opt-${m.id}`, strong: false }))];
+  if (view === "module") return [{ key: active, strong: true }];
   return [];
 }
 

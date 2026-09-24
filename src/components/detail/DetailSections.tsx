@@ -1,6 +1,7 @@
 "use client";
 
 import type { Item } from "@/content/types";
+import { agents } from "@/content/content";
 import Tag from "@/components/ui/Tag";
 import StatusDot from "@/components/ui/StatusDot";
 import SystemDiagram from "@/components/modules/SystemDiagram";
@@ -16,7 +17,8 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 
 /** The body of the detail view, shared by the desktop overlay and the mobile sheet. */
 export default function DetailSections({ item }: { item: Item }) {
-  const code = item.category === "project" ? item.code : item.category === "agent" ? item.role : `${item.nodes.length} nodes`;
+  const code =
+    item.category === "project" ? item.code : item.category === "agent" ? item.role : item.category === "skill" ? `v${item.version}` : `${item.nodes.length} nodes`;
   return (
     <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-2">
@@ -33,6 +35,14 @@ export default function DetailSections({ item }: { item: Item }) {
       </header>
 
       <Section label="problem">{item.problem}</Section>
+      {item.category === "skill" ? (
+        <>
+          <Section label="trigger">{item.trigger}</Section>
+          <Section label="used by">
+            {item.usedBy.map((id) => agents.find((a) => a.id === id)?.name ?? id).join(" · ")}
+          </Section>
+        </>
+      ) : null}
       <Section label="what I built">{item.built}</Section>
 
       <Section label="architecture">
@@ -53,7 +63,7 @@ export default function DetailSections({ item }: { item: Item }) {
               {s}
             </Tag>
           ))}
-          {item.category === "agent"
+          {item.category === "agent" || item.category === "skill"
             ? item.tools.map((t) => (
                 <Tag key={`tool-${t}`}>{t}</Tag>
               ))

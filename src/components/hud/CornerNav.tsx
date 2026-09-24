@@ -1,6 +1,6 @@
 "use client";
 
-import { modules } from "@/content/content";
+import { aboutEntry, modules } from "@/content/content";
 import type { ModuleId } from "@/content/types";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
@@ -25,7 +25,7 @@ export default function CornerNav({ className = "", onSelect }: { className?: st
         <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-gold" />
         core
       </button>
-      {modules.map((m) => {
+      {[...modules, aboutEntry].map((m) => {
         const on = open && active === m.id;
         return (
           <button

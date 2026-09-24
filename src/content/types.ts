@@ -67,9 +67,44 @@ export interface System extends BaseItem {
   edges: SystemEdge[];
 }
 
-export type Item = Project | Agent | System;
+/** A reusable skill an agent can load: a packaged capability with its own instructions and tools. */
+export interface Skill extends BaseItem {
+  category: "skill";
+  /** when an agent reaches for it */
+  trigger: string;
+  tools: string[];
+  /** ids of the agents that load this skill */
+  usedBy: string[];
+  version: string;
+}
+
+export type Item = Project | Agent | Skill | System;
 export type Category = Item["category"];
-export type ModuleId = "projects" | "agents" | "systems";
+/** the four content modules plus the about section, which shares their layout */
+export type ModuleId = "projects" | "agents" | "skills" | "systems" | "about";
+export type ContentModuleId = Exclude<ModuleId, "about">;
+
+export interface Fact {
+  label: string;
+  value: string;
+}
+
+export interface TimelineEntry {
+  year: string;
+  title: string;
+  note: string;
+}
+
+export interface About {
+  /** short paragraphs */
+  intro: string[];
+  /** one line on what you are doing now */
+  now: string;
+  facts: Fact[];
+  timeline: TimelineEntry[];
+  /** optional portrait in public/ */
+  photo?: string;
+}
 
 export interface Profile {
   name: string;

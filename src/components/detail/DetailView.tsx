@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion, type PanInfo } from "framer-motion";
-import { agents, projects, systems } from "@/content/content";
+import { agents, projects, skills, systems } from "@/content/content";
 import type { Item } from "@/content/types";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
@@ -11,7 +11,7 @@ import Brackets from "@/components/hud/Brackets";
 import Kbd from "@/components/ui/Kbd";
 import DetailSections from "./DetailSections";
 
-const ALL: Item[] = [...projects, ...agents, ...systems];
+const ALL: Item[] = [...projects, ...agents, ...skills, ...systems];
 
 function findItem(id: string | null): Item | undefined {
   return id ? ALL.find((i) => i.id === id) : undefined;

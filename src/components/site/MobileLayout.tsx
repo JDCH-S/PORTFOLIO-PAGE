@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, type PanInfo } from "framer-motion";
-import { modules, profile } from "@/content/content";
+import { aboutEntry, modules, profile } from "@/content/content";
 import type { ModuleId } from "@/content/types";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
@@ -11,10 +11,20 @@ import Decode from "@/components/ui/Decode";
 import Telemetry from "@/components/hud/Telemetry";
 import ProjectsModule from "@/components/modules/ProjectsModule";
 import AgentsModule from "@/components/modules/AgentsModule";
+import SkillsModule from "@/components/modules/SkillsModule";
 import SystemsModule from "@/components/modules/SystemsModule";
-import OptionNode from "./OptionNode";
+import AboutModule from "@/components/modules/AboutModule";
+import OptionRow from "./OptionRow";
 
-const ORDER: ModuleId[] = ["projects", "agents", "systems"];
+const ORDER: ModuleId[] = ["projects", "agents", "skills", "systems", "about"];
+const PANES: Record<ModuleId, React.ComponentType<{ className?: string; compact?: boolean }>> = {
+  projects: ProjectsModule,
+  agents: AgentsModule,
+  skills: SkillsModule,
+  systems: SystemsModule,
+  about: AboutModule,
+};
+const TABS = [...modules.map((m) => ({ id: m.id as ModuleId, index: m.index, title: m.title })), { id: aboutEntry.id as ModuleId, index: aboutEntry.index, title: aboutEntry.title }];
 const EMBLEM = 40;
 
 /**
@@ -76,6 +86,11 @@ export default function MobileLayout() {
   }, [phase, view]);
 
   const index = ORDER.indexOf(active);
+  // keep the active tab visible in the scrollable strip
+  useEffect(() => {
+    if (view !== "module") return;
+    document.querySelector<HTMLElement>(`[data-tab="${active}"]`)?.scrollIntoView({ inline: "center", block: "nearest", behavior: reduced ? "auto" : "smooth" });
+  }, [active, view, reduced]);
   const go = useCallback(
     (i: number) => {
       const next = ORDER[Math.min(ORDER.length - 1, Math.max(0, i))];
@@ -120,12 +135,13 @@ export default function MobileLayout() {
           {nameBlock("lg")}
         </header>
         <div ref={hero} aria-hidden className="min-h-0 flex-1" />
-        <div className="flex flex-col gap-3 px-4" style={{ paddingBottom: "calc(20px + env(safe-area-inset-bottom, 0px))" }}>
-          <p className="label text-center text-steel">choose a module</p>
+        <nav aria-label="Modules" className="flex flex-col gap-0.5 px-4" style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}>
+          <p className="label mb-1 text-steel-dim">choose a module</p>
           {modules.map((m, i) => (
-            <OptionNode key={m.id} id={m.id} index={m.index} title={m.title} count={m.items.length} blurb={m.blurb} order={i} />
+            <OptionRow key={m.id} id={m.id} index={m.index} title={m.title} count={m.items.length} order={i} />
           ))}
-        </div>
+          <OptionRow id="about" index={aboutEntry.index} title={aboutEntry.title} order={modules.length} muted />
+        </nav>
       </div>
     );
   }
@@ -138,16 +154,17 @@ export default function MobileLayout() {
           <div ref={emblem} data-emblem aria-hidden className="h-10 w-10 shrink-0" />
           {nameBlock("sm")}
         </div>
-        <nav aria-label="Modules" className="grid grid-cols-3 border-t border-steel-line">
-          {modules.map((m, i) => {
+        <nav aria-label="Modules" className="flex overflow-x-auto border-t border-steel-line [scrollbar-width:none]">
+          {TABS.map((m, i) => {
             const on = m.id === active;
             return (
               <button
                 key={m.id}
                 type="button"
+                data-tab={m.id}
                 aria-current={on ? "true" : undefined}
                 onClick={() => go(i)}
-                className={`label flex h-11 items-center justify-center gap-2 border-b-2 transition-colors ${on ? "border-gold text-gold-hot" : "border-transparent text-steel"}`}
+                className={`label flex h-11 shrink-0 items-center justify-center gap-2 border-b-2 px-4 transition-colors ${on ? "border-gold text-gold-hot" : "border-transparent text-steel"}`}
               >
                 <span className="text-steel-dim">{m.index}</span>
                 {m.title}
@@ -162,8 +179,8 @@ export default function MobileLayout() {
         <div ref={hero} aria-hidden className="absolute inset-x-0 top-0 h-full" />
       </section>
 
-      {/* swipeable tabs */}
-      <div ref={track} className="overflow-hidden px-4 pb-6">
+      {/* swipeable tabs (the track has no padding, so its width is one pane) */}
+      <div ref={track} className="mx-4 overflow-hidden pb-6">
         <motion.div
           className="flex"
           drag="x"
@@ -174,15 +191,14 @@ export default function MobileLayout() {
           transition={reduced ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 34 }}
           style={{ width: `${ORDER.length * 100}%` }}
         >
-          <div className="shrink-0 pr-4" style={{ width: `${100 / ORDER.length}%` }} aria-hidden={active !== "projects"} inert={active !== "projects"}>
-            <ProjectsModule />
-          </div>
-          <div className="shrink-0 pr-4" style={{ width: `${100 / ORDER.length}%` }} aria-hidden={active !== "agents"} inert={active !== "agents"}>
-            <AgentsModule />
-          </div>
-          <div className="shrink-0 pr-4" style={{ width: `${100 / ORDER.length}%` }} aria-hidden={active !== "systems"} inert={active !== "systems"}>
-            <SystemsModule compact />
-          </div>
+          {ORDER.map((id) => {
+            const Pane = PANES[id];
+            return (
+              <div key={id} className="shrink-0 pr-4" style={{ width: `${100 / ORDER.length}%` }} aria-hidden={active !== id} inert={active !== id}>
+                <Pane compact />
+              </div>
+            );
+          })}
         </motion.div>
       </div>
 

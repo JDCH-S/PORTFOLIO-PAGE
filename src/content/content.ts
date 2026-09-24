@@ -4,7 +4,7 @@
  *
  * Every entry below is a PLACEHOLDER in the exact shape to fill in.
  */
-import type { Agent, Profile, Project, System } from "./types";
+import type { About, Agent, Profile, Project, Skill, System } from "./types";
 
 export const profile: Profile = {
   name: "Juan Diego Chiriboga",
@@ -108,6 +108,77 @@ export const agents: Agent[] = [
   },
 ];
 
+/**
+ * Skills are the reusable capabilities the agents load: packaged instructions plus the tools
+ * they wrap (the way Claude loads a skill). Agents are the live units; skills are their kit.
+ */
+export const skills: Skill[] = [
+  {
+    category: "skill",
+    id: "skl-01",
+    name: "PLACEHOLDER · Skill one",
+    version: "1.2.0",
+    tagline: "One line on what this skill lets an agent do.",
+    trigger: "When the task mentions a spreadsheet, a CSV or 'the numbers'.",
+    tools: ["python", "openpyxl", "file read"],
+    usedBy: ["agt-01", "agt-03"],
+    problem: "The recurring task this skill packages.",
+    built: "How it is built: the instructions, the checks, the tools it wraps, how it is evaluated.",
+    result: "A measurable result, e.g. 92% first-pass accuracy on 300 files.",
+    stack: ["Markdown", "Python"],
+    links: [{ label: "GitHub", href: "https://github.com/JDCH-S" }],
+  },
+  {
+    category: "skill",
+    id: "skl-02",
+    name: "PLACEHOLDER · Skill two",
+    version: "0.9.0",
+    tagline: "One line on what this skill lets an agent do.",
+    trigger: "When an agent needs to search the web and cite what it found.",
+    tools: ["web search", "fetch", "citations"],
+    usedBy: ["agt-01"],
+    problem: "The recurring task this skill packages.",
+    built: "How it is built.",
+    result: "A measurable result.",
+    stack: ["Markdown", "TypeScript"],
+    links: [],
+  },
+  {
+    category: "skill",
+    id: "skl-03",
+    name: "PLACEHOLDER · Skill three",
+    version: "2.0.1",
+    tagline: "One line on what this skill lets an agent do.",
+    trigger: "When a ticket, incident or alert needs triage.",
+    tools: ["jira", "slack", "sql"],
+    usedBy: ["agt-02"],
+    problem: "The recurring task this skill packages.",
+    built: "How it is built.",
+    result: "A measurable result.",
+    stack: ["Markdown", "Python"],
+    links: [],
+  },
+];
+
+export const about: About = {
+  intro: [
+    "PLACEHOLDER · Two or three sentences on who you are and what you build: the kind of problems you take on, the way you work, what you care about in a system.",
+    "PLACEHOLDER · One paragraph on your path: where you started, what you learned along the way, and what you are looking for next.",
+  ],
+  now: "PLACEHOLDER · What you are building or exploring right now.",
+  facts: [
+    { label: "based in", value: "PLACEHOLDER · city" },
+    { label: "focus", value: "agents, retrieval, evaluation" },
+    { label: "languages", value: "Python, TypeScript" },
+    { label: "availability", value: "open to work" },
+  ],
+  timeline: [
+    { year: "2025", title: "PLACEHOLDER · Role or milestone", note: "One line on what it was." },
+    { year: "2023", title: "PLACEHOLDER · Role or milestone", note: "One line on what it was." },
+    { year: "2021", title: "PLACEHOLDER · Role or milestone", note: "One line on what it was." },
+  ],
+};
+
 export const systems: System[] = [
   {
     category: "system",
@@ -164,5 +235,8 @@ export const systems: System[] = [
 export const modules = [
   { id: "projects", title: "Projects", index: "01", items: projects, blurb: "Mission files: the problem, what was built, the measurable result." },
   { id: "agents", title: "Agents", index: "02", items: agents, blurb: "Live units: their role, tools and activity." },
-  { id: "systems", title: "Systems", index: "03", items: systems, blurb: "Architecture diagrams with the data flowing between components." },
+  { id: "skills", title: "Skills", index: "03", items: skills, blurb: "The reusable skills the agents load: instructions plus the tools they wrap." },
+  { id: "systems", title: "Systems", index: "04", items: systems, blurb: "Architecture diagrams with the data flowing between components." },
 ] as const;
+
+export const aboutEntry = { id: "about", title: "About", index: "05", blurb: "Who is behind the core." } as const;

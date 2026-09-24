@@ -78,11 +78,17 @@ The page opens on the hologram alone: the sphere, the name, the corner nav and a
 with inertia on release. Tapping it steps through three views:
 
 1. **core**: the hologram alone.
-2. **menu**: three option cards emerge around the sphere (Projects left, Agents right,
-   Systems below on desktop; a list under the sphere on mobile), each on its own beam.
-3. **module**: clicking an option opens only that module. On desktop the sphere and the two
-   remaining options move to the left column and the module fills the right; on mobile the
-   sphere docks into the sticky header and the module is one of three swipeable tabs.
+2. **menu**: five callouts emerge on the sphere's rim, the way an instrument labels a specimen:
+   a leader line from the rim to a text label (index, title, count; blurb on hover). No
+   containers. Projects upper-left, Agents upper-right, Systems lower-left, Skills lower-right,
+   About below. On mobile they are a list of leader-tick rows under the sphere.
+3. **module**: clicking a callout opens only that section. On desktop the sphere and the other
+   options (as text rows) move to the left column and the section fills the right; on mobile the
+   sphere docks into the sticky header and the section is one of five swipeable tabs.
+
+Sections: Projects, Agents, **Skills** (the reusable skills the agents load, in the shape of a
+skill file: name, version, trigger, tools, used by) , Systems, and **About** (identity card,
+bio, now, facts, timeline, links).
 
 Tapping the sphere goes back one step (module → menu → core); Esc does the same. The corner
 nav can jump straight to a module. The layouts below describe the menu and module states.

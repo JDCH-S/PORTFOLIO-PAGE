@@ -18,9 +18,11 @@ Stack: Next.js (App Router) · TypeScript · Tailwind · React Three Fiber + dre
 ## Adding your content
 
 Everything the modules show comes from `src/content/content.ts`. Replace the `PLACEHOLDER`
-entries with your own projects, agents and systems in the same shape (types in
-`src/content/types.ts`), and edit `profile` for your name, role, availability and links.
-Screenshots go in `public/` and are referenced by path. Nothing else needs touching.
+entries with your own projects, agents, skills and systems in the same shape (types in
+`src/content/types.ts`), edit `profile` for your name, role, availability and links, and fill
+`about` (intro paragraphs, what you are doing now, facts, timeline, optional `photo`).
+Screenshots and the portrait go in `public/` and are referenced by path. Nothing else needs
+touching.
 
 ## Run it
 
@@ -52,8 +54,12 @@ Useful query parameters while reviewing (they work on `/` and `/sphere`):
   reduced motion.
 - Drag the sphere (mouse or finger) to rotate it; it coasts to a stop (`useSpinDrag.ts`,
   applied in `SphereRig.tsx`). Tap it to step through the views held in `siteStore.ts`:
-  core → menu (three option cards on beams) → module (only the chosen module, the other two
-  as chips). Esc or another tap on the sphere steps back. `Emergence.tsx` times the reveals.
+  core → menu (five callouts hanging off the sphere's rim: Projects, Agents, Skills, Systems,
+  About) → module (only the chosen one, the others as text rows beside the sphere). Esc or
+  another tap on the sphere steps back. `Emergence.tsx` times the reveals.
+- Five sections: **Projects** (mission files), **Agents** (live units), **Skills** (the reusable
+  skills the agents load: trigger, tools, which agents use them), **Systems** (architecture
+  diagrams) and **About** (bio, facts, timeline, links; no items to open).
 - `components/modules/*` render the three modules from `content.ts`; `ItemButton` handles hover,
   focus and the click that fires the fragment stream and opens `components/detail/DetailView`.
 
