@@ -90,7 +90,7 @@ export function makeShells(count: number, seed: number, ragged: number, windows 
 export function buildFragments(
   targetCount: number,
   shellCount: number,
-  arcLength: number,
+  baseArcLength: number,
   ragged: number,
   seed: number,
   arcSegments: number,
@@ -153,8 +153,11 @@ export function buildFragments(
     let placed = 0;
     let guard = 0;
     const r = shell.radius;
-    // fragments are thinner on inner shells (closer to the camera-facing surface they read finer)
-    const widthScale = 0.55 + 0.45 * r;
+    const n = shells.length;
+    const st = n === 1 ? 1 : si / (n - 1); // 0 inner .. 1 outer
+    // outer shells: longer, thinner, dimmer arcs and dust; inner shells: finer, denser detail
+    const widthScale = (0.55 + 0.45 * r) * (1 - 0.3 * st);
+    const arcLength = baseArcLength * (1 + 0.4 * st);
     while (placed < budget && guard++ < budget * 40) {
       randomUnit(rand, dir);
       // patchy coverage: simplex mask with clean edges; outer shells are sparser

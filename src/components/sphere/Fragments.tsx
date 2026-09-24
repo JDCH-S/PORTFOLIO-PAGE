@@ -115,7 +115,7 @@ export default function Fragments({ look, budget, onBuilt, timeOffset = 0 }: Fra
     if (!m) return;
     const u = m.uniforms;
     const step = Math.min(dt, 0.05);
-    time.current += step;
+    time.current = (time.current + step) % 3600;
     u.uTime.value = time.current;
     const quats = u.uShellQuat.value as THREE.Vector4[];
     const q = tmpQ.current;

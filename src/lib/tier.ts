@@ -12,14 +12,14 @@ export interface Capabilities {
   dpr: number;
 }
 
+/** three r186 requires WebGL2; a WebGL1-only device gets the static poster. */
 function hasWebGL(): boolean {
   try {
     const c = document.createElement("canvas");
-    const gl =
-      c.getContext("webgl2") ||
-      c.getContext("webgl") ||
-      c.getContext("experimental-webgl");
-    return !!gl;
+    const gl = c.getContext("webgl2");
+    if (!gl) return false;
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+    return true;
   } catch {
     return false;
   }

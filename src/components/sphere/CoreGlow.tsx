@@ -50,7 +50,7 @@ export default function CoreGlow({ look, timeOffset = 0 }: { look: SphereLook; t
     const m = material.current;
     if (!m) return;
     const u = m.uniforms;
-    time.current += Math.min(dt, 0.05);
+    time.current = (time.current + Math.min(dt, 0.05)) % 3600;
     u.uTime.value = time.current;
   });
 

@@ -1,11 +1,12 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import StaticSphere from "./StaticSphere";
 import dynamic from "next/dynamic";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { PerformanceMonitor } from "@react-three/drei";
 import type { QualityTier } from "@/lib/tier";
-import { DEFAULT_LOOK, TIER_BUDGETS, type SphereLook, type Tier } from "./config";
+import { DEFAULT_LOOK, STRUCTURE_KEYS, TIER_BUDGETS, type SphereLook, type Tier, type ToneMode } from "./config";
 import Fragments from "./Fragments";
 import Vortex from "./Vortex";
 import CoreGlow from "./CoreGlow";
@@ -50,6 +51,29 @@ function setInfoAutoReset(gl: import("three").WebGLRenderer, value: boolean) {
   gl.info.autoReset = value;
 }
 
+/** Show the poster while the GL context is lost; the renderer rebuilds itself on restore. */
+function ContextGuard({ onLost, onRestored }: { onLost: () => void; onRestored: () => void }) {
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    const el = gl.domElement;
+    const lost = (e: Event) => {
+      e.preventDefault();
+      onLost();
+    };
+    const restored = () => onRestored();
+    el.addEventListener("webglcontextlost", lost);
+    el.addEventListener("webglcontextrestored", restored);
+    return () => {
+      el.removeEventListener("webglcontextlost", lost);
+      el.removeEventListener("webglcontextrestored", restored);
+    };
+  }, [gl, onLost, onRestored]);
+  return null;
+}
+
+const STRUCTURAL = new Set<string>(STRUCTURE_KEYS);
+const TONES: ToneMode[] = ["none", "aces", "agx", "neutral"];
+
 /** Exposes readiness + live stats for the screenshot harness and the debug panel. */
 function Telemetry({ tier, fragments, onFps, onFirstFrame }: { tier: Tier; fragments: number; onFps: (fps: number) => void; onFirstFrame: () => void }) {
   const gl = useThree((s) => s.gl);
@@ -90,7 +114,41 @@ function Telemetry({ tier, fragments, onFps, onFirstFrame }: { tier: Tier; fragm
 }
 
 export default function SphereScene({ tier: initialTier, coarsePointer, dpr, debug = false, className = "" }: SphereSceneProps) {
-  const [look, setLook] = useState<SphereLook>(DEFAULT_LOOK);
+  const query = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const captureMode = !!query?.has("capture");
+  // a forced ?tier= pins the tier (review + screenshot harness), so no runtime regression
+  const pinned = !!query?.get("tier");
+  // ?t=seconds starts the animation clocks mid-flight (screenshot harness / review)
+  const timeOffset = Math.max(0, Number(query?.get("t") ?? 0)) || 0;
+  const toneParam = query?.get("tone");
+  const initialLook = useMemo<SphereLook>(
+    () => (toneParam && TONES.includes(toneParam as ToneMode) ? { ...DEFAULT_LOOK, toneMapping: toneParam as ToneMode } : DEFAULT_LOOK),
+    [toneParam],
+  );
+  const [look, setLookState] = useState<SphereLook>(initialLook);
+  // live keys apply immediately; structural keys (geometry rebuilds) are debounced
+  const pending = useRef<SphereLook | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setLook = useCallback((next: SphereLook) => {
+    setLookState((prev) => {
+      const structuralChanged = STRUCTURE_KEYS.some((k) => prev[k] !== next[k]);
+      if (!structuralChanged) return next;
+      const live = { ...next };
+      for (const k of Object.keys(live) as (keyof SphereLook)[]) {
+        if (STRUCTURAL.has(k)) (live as unknown as Record<string, unknown>)[k] = prev[k];
+      }
+      pending.current = next;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        if (pending.current) setLookState(pending.current);
+        pending.current = null;
+      }, 180);
+      return live;
+    });
+  }, []);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
   const [tier, setTier] = useState<Tier>(initialTier);
   const [fragments, setFragments] = useState(0);
   const [fps, setFps] = useState(0);
@@ -103,19 +161,23 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   const budget = TIER_BUDGETS[tier];
   const stats = useMemo(() => ({ fragments, fps }), [fragments, fps]);
   const onBuilt = useCallback((n: number) => setFragments(n), []);
-  const query = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const captureMode = !!query?.has("capture");
-  // a forced ?tier= pins the tier (review + screenshot harness), so no runtime regression
-  const pinned = !!query?.get("tier");
-  // ?t=seconds starts the animation clocks mid-flight (screenshot harness / review)
-  const timeOffset = Math.max(0, Number(query?.get("t") ?? 0)) || 0;
   const showDebug = debug && !captureMode;
+  // the performance monitor only starts after warm-up (shader compile, poster cross-fade)
+  const [monitor, setMonitor] = useState(false);
+  useEffect(() => {
+    if (!visible) return;
+    const id = setTimeout(() => setMonitor(true), 2500);
+    return () => clearTimeout(id);
+  }, [visible]);
+  const onLost = useCallback(() => setVisible(false), []);
+  const onRestored = useCallback(() => setVisible(true), []);
 
   return (
-    <div
-      className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible ? "opacity-100" : "opacity-0"} ${className}`}
-      data-tier={tier}
-    >
+    <div className={`absolute inset-0 ${className}`} data-tier={tier}>
+      <div className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible ? "opacity-0" : "opacity-100"}`} aria-hidden>
+        <StaticSphere loading />
+      </div>
+      <div className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
       <Canvas
         dpr={[budget.dpr[0], Math.max(1, Math.min(budget.dpr[1], dpr) * dprScale)]}
         camera={{ fov: 40, near: 0.1, far: 50, position: [0, 0, 3.8] }}
@@ -128,7 +190,8 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
         }}
       >
         <CameraFit />
-        {!pinned ? <PerformanceMonitor flipflops={3} onDecline={onDecline} onFallback={onFallback} /> : null}
+        <ContextGuard onLost={onLost} onRestored={onRestored} />
+        {!pinned && monitor ? <PerformanceMonitor flipflops={3} onDecline={onDecline} onFallback={onFallback} /> : null}
         <Suspense fallback={null}>
           <SphereRig look={look} coarsePointer={coarsePointer} timeOffset={timeOffset}>
             <Fragments look={look} budget={budget} onBuilt={onBuilt} timeOffset={timeOffset} />
@@ -140,6 +203,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
         </Suspense>
         <Telemetry tier={tier} fragments={fragments} onFps={setFps} onFirstFrame={onFirstFrame} />
       </Canvas>
+      </div>
       {showDebug ? <DebugPanel tier={tier} onLook={setLook} onTier={setTier} stats={stats} /> : null}
       {!captureMode ? (
         <div className="pointer-events-none absolute right-4 bottom-4 select-none text-right font-mono text-[10px] uppercase tracking-[0.22em] text-fg-dim/70">
