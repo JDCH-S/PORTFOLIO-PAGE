@@ -5,6 +5,7 @@ import SphereStage from "@/components/sphere/SphereStage";
 import Grid from "@/components/hud/Grid";
 import DetailView from "@/components/detail/DetailView";
 import { useIsDesktop, useReducedMotion } from "@/lib/useMediaQuery";
+import { useSiteStore } from "@/store/siteStore";
 import IntroSequence from "./IntroSequence";
 import SphereLean from "./SphereLean";
 import FragmentStream from "./FragmentStream";
@@ -18,11 +19,13 @@ export default function Site() {
   const mounted = useSyncExternalStore(noop, () => true, () => false);
   const isDesktop = useIsDesktop();
   const reduced = useReducedMotion();
+  const detail = useSiteStore((s) => s.phase) === "detail";
   return (
-    <div className="relative">
+    <main className="relative">
       <Grid />
-      <div className="pointer-events-none fixed inset-0 z-0" aria-hidden>
-        <SphereStage />
+      {/* the sphere layer rises above the detail backdrop so the parked sphere stays lit */}
+      <div className={`pointer-events-none fixed inset-0 mix-blend-screen ${detail ? "z-[55]" : "z-0"}`} aria-hidden>
+        <SphereStage blend={false} />
       </div>
       {mounted ? (
         <>
@@ -33,6 +36,6 @@ export default function Site() {
           <DetailView />
         </>
       ) : null}
-    </div>
+    </main>
   );
 }

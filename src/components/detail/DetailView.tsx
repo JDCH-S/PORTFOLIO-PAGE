@@ -35,7 +35,7 @@ export default function DetailView() {
     if (!item) return;
     lastFocus.current = document.activeElement as HTMLElement | null;
     const sphere = useSphereStore.getState();
-    if (isDesktop) sphere.setFrame({ x: 76, y: 76, size: 92 });
+    if (isDesktop) sphere.setFrame({ x: 60, y: 60, size: 76 });
     sphere.setLeanTarget(0, 0);
     document.body.style.overflow = "hidden";
     const focusFirst = window.setTimeout(() => panel.current?.querySelector<HTMLElement>("button")?.focus(), 30);

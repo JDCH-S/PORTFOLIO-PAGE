@@ -23,6 +23,11 @@ export interface SphereSceneProps {
   dpr: number;
   debug?: boolean;
   className?: string;
+  /**
+   * Screen-blend the black-cleared canvas over the page here. Turn off when the host puts
+   * the scene inside its own stacking context (a fixed layer) and blends that layer instead.
+   */
+  blend?: boolean;
 }
 
 declare global {
@@ -193,7 +198,7 @@ const TONES: ToneMode[] = ["none", "aces", "agx", "neutral"];
 /** full-resolution half-float passes get expensive above this many canvas pixels */
 const PIXEL_BUDGET = 4.5e6;
 
-export default function SphereScene({ tier: initialTier, coarsePointer, dpr, debug = false, className = "" }: SphereSceneProps) {
+export default function SphereScene({ tier: initialTier, coarsePointer, dpr, debug = false, className = "", blend = true }: SphereSceneProps) {
   const query = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const captureMode = !!query?.has("capture");
   // a forced ?tier= pins the tier (review + screenshot harness), so no runtime regression
@@ -278,7 +283,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
       <div className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible || hidePoster ? "opacity-0" : "opacity-100"}`} aria-hidden>
         <StaticSphere loading />
       </div>
-      <div className={`absolute inset-0 mix-blend-screen transition-opacity duration-700 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
+      <div className={`absolute inset-0 ${blend ? "mix-blend-screen" : ""} transition-opacity duration-700 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
         <Canvas
           dpr={[budget.dpr[0], maxDpr]}
           camera={{ fov: 40, near: 0.1, far: 50, position: [0, 0, 3.8] }}

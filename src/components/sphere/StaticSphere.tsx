@@ -34,6 +34,8 @@ export default function StaticSphere({
         <picture>
           <img
             src="/sphere-static.webp"
+            srcSet="/sphere-static-600.webp 600w, /sphere-static.webp 1200w"
+            sizes="(max-width: 640px) 100vw, min(100vmin, 1000px)"
             alt=""
             width={1200}
             height={1200}

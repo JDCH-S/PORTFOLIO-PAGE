@@ -93,7 +93,7 @@ export default function IntroSequence({ desktop, reduced }: { desktop: boolean; 
       <button
         type="button"
         onClick={() => ctrl.current?.skip()}
-        className="label pointer-events-auto absolute right-5 bottom-5 flex h-11 items-center gap-2 rounded-[2px] border border-steel-line px-3 text-steel hover:border-gold hover:text-gold-hot"
+        className="label pointer-events-auto absolute right-5 bottom-16 flex h-11 items-center gap-2 rounded-[2px] border border-steel-line bg-bg/70 px-3 text-steel hover:border-gold hover:text-gold-hot"
       >
         skip <span className="text-steel-dim">esc</span>
       </button>

@@ -16,11 +16,13 @@ export interface SphereStageProps {
   /** Show the leva tweak panel (Phase 1 review). */
   debug?: boolean;
   className?: string;
+  /** see SphereScene: screen-blend inside, or let the host layer blend */
+  blend?: boolean;
 }
 
 const noopSubscribe = () => () => {};
 
-export default function SphereStage({ debug = false, className }: SphereStageProps) {
+export default function SphereStage({ debug = false, className, blend = true }: SphereStageProps) {
   // false during SSR and hydration, true once mounted on the client
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
@@ -44,5 +46,5 @@ export default function SphereStage({ debug = false, className }: SphereStagePro
   if (!caps) return <StaticSphere loading className={className} />;
   if (caps.tier === "static") return <StaticSphere className={className} />;
 
-  return <SphereScene tier={caps.tier} coarsePointer={caps.coarsePointer} dpr={caps.dpr} debug={debug} className={className} />;
+  return <SphereScene tier={caps.tier} coarsePointer={caps.coarsePointer} dpr={caps.dpr} debug={debug} className={className} blend={blend} />;
 }

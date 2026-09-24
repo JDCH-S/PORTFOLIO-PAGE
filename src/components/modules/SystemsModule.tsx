@@ -13,7 +13,7 @@ export default function SystemsModule({ className = "", compact = false }: { cla
     <ModuleFrame id="systems" index="03" title="Systems" count={systems.length} status="architecture" className={className}>
       <ItemList className={compact ? "" : "lg:grid lg:grid-cols-2 lg:gap-3"}>
         {systems.map((s) => (
-          <ItemButton key={s.id} itemId={s.id} className="p-3" aria-label={s.name}>
+          <ItemButton key={s.id} itemId={s.id} className="p-3">
             <div className="mb-1 flex items-baseline justify-between gap-3">
               <h3 className="font-display text-[16px] leading-[22px] font-semibold text-fg">{s.name}</h3>
               <span className="label text-steel-dim">{s.nodes.length} nodes</span>

@@ -36,7 +36,7 @@ the only source of colour, type, spacing and motion values in the codebase.
 | `--gold-line` | `rgba(255,178,63,0.32)` | 1px panel borders |
 | `--gold-glow` | `rgba(255,178,63,0.22)` | outer glow of panels and beams |
 | `--steel` | `#8fb3d9` | secondary labels, coordinates, tick marks |
-| `--steel-dim` | `#5c6e8c` | dividers, inactive tabs |
+| `--steel-dim` | `#7b8ba8` | dividers, inactive tabs, faint labels (5.9:1 on bg) |
 | `--steel-line` | `rgba(143,179,217,0.22)` | secondary 1px lines |
 | `--online` | `#6cf0a8` | status ok (agents ONLINE) |
 | `--standby` | `#ffb23f` | status standby |
