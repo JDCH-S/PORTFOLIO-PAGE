@@ -32,7 +32,7 @@ export interface TierBudget {
 export const TIER_BUDGETS: Record<Tier, TierBudget> = {
   high: { fragments: 8000, ribbons: 24, rings: 2, ribbonSegments: 64, particles: 1600, dpr: [1, 2], bloomLevels: 7, arcSegments: 6, maxShells: 8, cutScale: 1, minPx: 0.55 },
   medium: { fragments: 6000, ribbons: 20, rings: 2, ribbonSegments: 48, particles: 1000, dpr: [1, 1.5], bloomLevels: 6, arcSegments: 5, maxShells: 6, cutScale: 1, minPx: 0.65 },
-  low: { fragments: 4200, ribbons: 16, rings: 2, ribbonSegments: 40, particles: 600, dpr: [1, 1.5], bloomLevels: 5, arcSegments: 4, maxShells: 4, cutScale: 0.5, minPx: 0.8 },
+  low: { fragments: 4200, ribbons: 16, rings: 2, ribbonSegments: 40, particles: 600, dpr: [1, 1.25], bloomLevels: 4, arcSegments: 4, maxShells: 4, cutScale: 0.5, minPx: 0.8 },
 };
 
 export type ToneMode = "none" | "aces" | "agx" | "neutral";
@@ -118,7 +118,7 @@ export const DEFAULT_LOOK: SphereLook = {
   vortexRadius: 0.42,
   vortexBrightness: 1.0,
   vortexWidth: 0.7,
-  coreSize: 0.09,
+  coreSize: 0.045,
   coreBrightness: 0.7,
   haloStrength: 0.12,
 

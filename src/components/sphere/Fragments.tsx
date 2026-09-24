@@ -63,8 +63,8 @@ export default function Fragments({ look, budget, onBuilt, timeOffset = 0 }: Fra
 
   useEffect(() => {
     onBuilt?.(built.count);
-    return () => built.geometry.dispose();
-  }, [built, onBuilt]);
+  }, [built.count, onBuilt]);
+  useEffect(() => () => built.geometry.dispose(), [built]);
 
   const params = useMemo(() => makeMaterialParams(), []);
   const material = useRef<THREE.ShaderMaterial>(null);

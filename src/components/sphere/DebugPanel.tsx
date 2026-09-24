@@ -2,13 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { button, folder, Leva, useControls } from "leva";
-import { DEFAULT_LOOK, type SphereLook, type Tier, type ToneMode } from "./config";
+import { type SphereLook, type Tier, type ToneMode } from "./config";
+import { useSphereStore } from "./sphereStore";
 
 export interface DebugPanelProps {
   tier: Tier;
+  initialLook: SphereLook;
   onLook: (look: SphereLook) => void;
   onTier: (tier: Tier) => void;
-  stats: { fragments: number; fps: number };
 }
 
 const THEME = {
@@ -33,18 +34,26 @@ const THEME = {
   radii: { xs: "2px", sm: "2px", lg: "4px" },
 };
 
+function sameLook(a: SphereLook, b: SphereLook): boolean {
+  for (const k of Object.keys(a) as (keyof SphereLook)[]) if (a[k] !== b[k]) return false;
+  return true;
+}
+
 /** Phase-1 tweak panel. Every value maps 1:1 onto SphereLook. */
-export default function DebugPanel({ tier, onLook, onTier, stats }: DebugPanelProps) {
-  const latest = useRef<SphereLook>(DEFAULT_LOOK);
-  const D = DEFAULT_LOOK;
+export default function DebugPanel({ tier, initialLook, onLook, onTier }: DebugPanelProps) {
+  const latest = useRef<SphereLook>(initialLook);
+  const lastTier = useRef<Tier>(tier);
+  const fps = useSphereStore((s) => s.fps);
+  const fragments = useSphereStore((s) => s.fragments);
+  const D = initialLook;
 
   const [values, set] = useControls(
     () => ({
       Quality: folder(
         {
           tier: { value: tier, options: ["high", "medium", "low"] as Tier[], label: "tier" },
-          fps: { value: stats.fps, editable: false, label: "fps" },
-          fragments: { value: stats.fragments, editable: false, label: "fragments" },
+          fps: { value: 0, disabled: true, label: "fps" },
+          fragments: { value: 0, disabled: true, label: "fragments" },
         },
         { collapsed: false },
       ),
@@ -84,7 +93,7 @@ export default function DebugPanel({ tier, onLook, onTier, stats }: DebugPanelPr
           vortexRadius: { value: D.vortexRadius, min: 0.05, max: 1, step: 0.01, label: "radius" },
           vortexBrightness: { value: D.vortexBrightness, min: 0, max: 4, step: 0.05, label: "brightness" },
           vortexWidth: { value: D.vortexWidth, min: 0.2, max: 3, step: 0.05, label: "ribbon width" },
-          coreSize: { value: D.coreSize, min: 0.02, max: 0.6, step: 0.01, label: "core size" },
+          coreSize: { value: D.coreSize, min: 0.01, max: 0.3, step: 0.005, label: "core size" },
           coreBrightness: { value: D.coreBrightness, min: 0, max: 4, step: 0.05, label: "core bright" },
           haloStrength: { value: D.haloStrength, min: 0, max: 1.5, step: 0.01, label: "halo" },
         },
@@ -128,20 +137,33 @@ export default function DebugPanel({ tier, onLook, onTier, stats }: DebugPanelPr
     [],
   );
 
+  // telemetry rows follow the store; the runtime tier (performance fallback) is pushed into the panel
   useEffect(() => {
-    set({ fps: stats.fps, fragments: stats.fragments });
-  }, [set, stats.fps, stats.fragments]);
+    set({ fps, fragments });
+  }, [set, fps, fragments]);
+  useEffect(() => {
+    if (lastTier.current !== tier) {
+      lastTier.current = tier;
+      set({ tier });
+    }
+  }, [set, tier]);
 
   useEffect(() => {
-    const v = values as unknown as SphereLook & { tier: Tier; fps: number; fragments: number };
-    const next: SphereLook = { ...DEFAULT_LOOK };
-    (Object.keys(DEFAULT_LOOK) as (keyof SphereLook)[]).forEach((k) => {
+    const v = values as unknown as SphereLook & { tier: Tier };
+    const next: SphereLook = { ...initialLook };
+    (Object.keys(initialLook) as (keyof SphereLook)[]).forEach((k) => {
       (next as unknown as Record<string, unknown>)[k] = v[k];
     });
-    latest.current = next;
-    onLook(next);
-    onTier(v.tier);
-  }, [values, onLook, onTier]);
+    if (!sameLook(next, latest.current)) {
+      latest.current = next;
+      onLook(next);
+    }
+    // only a change made in the panel is forwarded; store ticks must not re-assert a stale tier
+    if (v.tier !== lastTier.current) {
+      lastTier.current = v.tier;
+      onTier(v.tier);
+    }
+  }, [values, initialLook, onLook, onTier]);
 
   const small = typeof window !== "undefined" && window.innerWidth < 768;
   return <Leva theme={THEME} titleBar={{ title: "SPHERE // TWEAKS", filter: false, drag: true, position: { x: 0, y: 0 } }} collapsed={small} />;

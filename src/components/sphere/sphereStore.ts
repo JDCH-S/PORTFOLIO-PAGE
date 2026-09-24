@@ -2,7 +2,8 @@ import { create } from "zustand";
 
 /**
  * Imperative control surface for the sphere, used by later phases
- * (pulse toward a hovered module, shrink into a corner, etc.).
+ * (pulse toward a hovered module, shrink into a corner, etc.), plus
+ * live telemetry for the debug panel and caption.
  * Values are read every frame by the rig, so they are plain numbers.
  */
 export interface SphereState {
@@ -16,10 +17,14 @@ export interface SphereState {
   offsetTarget: [number, number];
   /** extra lean applied by the UI (e.g. hover), added to pointer tilt */
   leanTarget: [number, number];
+  /** telemetry (updated about once per second) */
+  fps: number;
+  fragments: number;
   pulseToward: (x: number, y: number, strength?: number) => void;
   setScaleTarget: (s: number) => void;
   setOffsetTarget: (x: number, y: number) => void;
   setLeanTarget: (x: number, y: number) => void;
+  setStats: (fps: number, fragments: number) => void;
 }
 
 export const useSphereStore = create<SphereState>((set) => ({
@@ -28,8 +33,11 @@ export const useSphereStore = create<SphereState>((set) => ({
   scaleTarget: 1,
   offsetTarget: [0, 0],
   leanTarget: [0, 0],
+  fps: 0,
+  fragments: 0,
   pulseToward: (x, y, strength = 1) => set({ pulse: Math.min(1, strength), pulseDir: [x, y] }),
   setScaleTarget: (scaleTarget) => set({ scaleTarget }),
   setOffsetTarget: (x, y) => set({ offsetTarget: [x, y] }),
   setLeanTarget: (x, y) => set({ leanTarget: [x, y] }),
+  setStats: (fps, fragments) => set((s) => (s.fps === fps && s.fragments === fragments ? s : { fps, fragments })),
 }));

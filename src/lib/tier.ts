@@ -38,9 +38,11 @@ export function detectCapabilities(): Capabilities {
     return { tier: "static", reducedMotion, webgl, coarsePointer, dpr };
   }
 
+  // Safari does not expose these; undefined means unknown, not weak
   const nav = navigator as Navigator & { deviceMemory?: number };
-  const cores = nav.hardwareConcurrency ?? 4;
-  const memory = nav.deviceMemory ?? 4;
+  const cores = nav.hardwareConcurrency;
+  const memory = nav.deviceMemory;
+  const weak = (cores !== undefined && cores <= 4) || (memory !== undefined && memory <= 4);
   const shortSide = Math.min(window.innerWidth, window.innerHeight);
   const longSide = Math.max(window.innerWidth, window.innerHeight);
 
@@ -49,9 +51,9 @@ export function detectCapabilities(): Capabilities {
     // Touch devices: phones are low, tablets are medium.
     const isPhone = shortSide < 600 || longSide < 900;
     tier = isPhone ? "low" : "medium";
-    if (!isPhone && (cores <= 4 || memory <= 4)) tier = "low";
+    if (!isPhone && weak) tier = "low";
   } else {
-    tier = cores <= 4 || memory <= 4 ? "medium" : "high";
+    tier = weak ? "medium" : "high";
   }
   return { tier, reducedMotion, webgl, coarsePointer, dpr };
 }

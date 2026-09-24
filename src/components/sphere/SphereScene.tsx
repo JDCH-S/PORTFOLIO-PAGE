@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import StaticSphere from "./StaticSphere";
 import dynamic from "next/dynamic";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { PerformanceMonitor } from "@react-three/drei";
@@ -13,6 +12,8 @@ import CoreGlow from "./CoreGlow";
 import Particles from "./Particles";
 import SphereRig from "./SphereRig";
 import Effects from "./Effects";
+import StaticSphere from "./StaticSphere";
+import { useSphereStore } from "./sphereStore";
 
 const DebugPanel = dynamic(() => import("./DebugPanel"), { ssr: false });
 
@@ -31,7 +32,7 @@ declare global {
   }
 }
 
-/** Keeps the sphere (radius 1) at ~72% of the limiting viewport dimension. */
+/** Keeps the sphere (radius 1) at ~72% of the limiting viewport dimension (88% on phones). */
 function CameraFit() {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
@@ -40,7 +41,7 @@ function CameraFit() {
     const aspect = size.width / Math.max(1, size.height);
     const vHalf = Math.tan((cam.fov * Math.PI) / 360);
     const limitHalf = aspect < 1 ? vHalf * aspect : vHalf;
-    const fill = aspect < 0.8 ? 0.88 : 0.72; // phones: the sphere fills most of the width
+    const fill = aspect < 0.8 ? 0.88 : 0.72;
     cam.position.set(0, 0, 1 / (fill * limitHalf));
     cam.lookAt(0, 0, 0);
     cam.updateProjectionMatrix();
@@ -50,6 +51,46 @@ function CameraFit() {
 
 function setInfoAutoReset(gl: import("three").WebGLRenderer, value: boolean) {
   gl.info.autoReset = value;
+}
+
+/**
+ * Mounted last inside the Canvas: compiles the scene's shader programs in parallel
+ * (KHR_parallel_shader_compile) before the render loop starts, so the first frame
+ * does not stall the page. Falls through after a short timeout regardless.
+ */
+function Warmup() {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  const setFrameloop = useThree((s) => s.setFrameloop);
+  useEffect(() => {
+    let done = false;
+    const start = () => {
+      if (done) return;
+      done = true;
+      setFrameloop("always");
+    };
+    const timer = setTimeout(start, 1500);
+    gl.compileAsync(scene, camera).then(start, start);
+    return () => clearTimeout(timer);
+  }, [gl, scene, camera, setFrameloop]);
+  return null;
+}
+
+/** Pauses the render loop while the canvas is scrolled out of view. */
+function VisibilityGate({ enabled }: { enabled: boolean }) {
+  const gl = useThree((s) => s.gl);
+  const setFrameloop = useThree((s) => s.setFrameloop);
+  useEffect(() => {
+    if (!enabled || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      ([entry]) => setFrameloop(entry.isIntersecting ? "always" : "never"),
+      { threshold: 0.05 },
+    );
+    io.observe(gl.domElement);
+    return () => io.disconnect();
+  }, [enabled, gl, setFrameloop]);
+  return null;
 }
 
 /** Show the poster while the GL context is lost; the renderer rebuilds itself on restore. */
@@ -72,36 +113,34 @@ function ContextGuard({ onLost, onRestored }: { onLost: () => void; onRestored: 
   return null;
 }
 
-const STRUCTURAL = new Set<string>(STRUCTURE_KEYS);
-const TONES: ToneMode[] = ["none", "aces", "agx", "neutral"];
-
-/** Exposes readiness + live stats for the screenshot harness and the debug panel. */
-function Telemetry({ tier, fragments, onFps, onFirstFrame }: { tier: Tier; fragments: number; onFps: (fps: number) => void; onFirstFrame: () => void }) {
+/** Readiness + live stats for the harness and the panel. Flips `visible` after the second frame, once the composer's shaders exist. */
+function Telemetry({ tier, onReady }: { tier: Tier; onReady: () => void }) {
   const gl = useThree((s) => s.gl);
   const frames = useRef(0);
   const acc = useRef(0);
-  const first = useRef(true);
+  const total = useRef(0);
   useEffect(() => {
     // count every pass of the frame (composer included), not just the last one
     setInfoAutoReset(gl, false);
     return () => setInfoAutoReset(gl, true);
   }, [gl]);
   useFrame((_, dt) => {
-    if (first.current) {
-      first.current = false;
+    total.current++;
+    if (total.current === 2) {
       window.__sphereReady = true;
-      onFirstFrame();
+      onReady();
     }
     frames.current++;
-    acc.current += dt;
+    acc.current += Math.min(dt, 0.1); // the first frame after warm-up carries the compile time
     if (acc.current >= 1) {
       const fps = Math.round(frames.current / acc.current);
       frames.current = 0;
       acc.current = 0;
-      onFps(fps);
+      const store = useSphereStore.getState();
+      store.setStats(fps, store.fragments);
       window.__sphereStats = {
         tier,
-        fragments,
+        fragments: store.fragments,
         fps,
         calls: gl.info.render.calls,
         triangles: gl.info.render.triangles,
@@ -113,6 +152,21 @@ function Telemetry({ tier, fragments, onFps, onFirstFrame }: { tier: Tier; fragm
   });
   return null;
 }
+
+function Caption({ tier }: { tier: Tier }) {
+  const fps = useSphereStore((s) => s.fps);
+  const fragments = useSphereStore((s) => s.fragments);
+  return (
+    <div className="pointer-events-none absolute right-4 bottom-4 select-none text-right font-mono text-[10px] uppercase tracking-[0.22em] text-fg-dim/70">
+      core // phase 1 · tier {tier} · {fragments.toLocaleString()} fragments · {fps} fps
+    </div>
+  );
+}
+
+const STRUCTURAL = new Set<string>(STRUCTURE_KEYS);
+const TONES: ToneMode[] = ["none", "aces", "agx", "neutral"];
+/** full-resolution half-float passes get expensive above this many canvas pixels */
+const PIXEL_BUDGET = 4.5e6;
 
 export default function SphereScene({ tier: initialTier, coarsePointer, dpr, debug = false, className = "" }: SphereSceneProps) {
   const query = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
@@ -150,18 +204,19 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
   }, []);
+
   const [tier, setTier] = useState<Tier>(initialTier);
-  const [fragments, setFragments] = useState(0);
-  const [fps, setFps] = useState(0);
+  const budget = TIER_BUDGETS[tier];
+  const onBuilt = useCallback((n: number) => {
+    const store = useSphereStore.getState();
+    store.setStats(store.fps, n);
+  }, []);
   const [visible, setVisible] = useState(false);
-  const onFirstFrame = useCallback(() => setVisible(true), []);
+  const onReady = useCallback(() => setVisible(true), []);
   // runtime regression: if frames drop, lower the pixel ratio, then the tier
   const [dprScale, setDprScale] = useState(1);
   const onDecline = useCallback(() => setDprScale((s) => Math.max(0.6, s * 0.8)), []);
   const onFallback = useCallback(() => setTier((t) => (t === "high" ? "medium" : "low")), []);
-  const budget = TIER_BUDGETS[tier];
-  const stats = useMemo(() => ({ fragments, fps }), [fragments, fps]);
-  const onBuilt = useCallback((n: number) => setFragments(n), []);
   const showDebug = debug && !captureMode;
   // the performance monitor only starts after warm-up (shader compile, poster cross-fade)
   const [monitor, setMonitor] = useState(false);
@@ -172,6 +227,15 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   }, [visible]);
   const onLost = useCallback(() => setVisible(false), []);
   const onRestored = useCallback(() => setVisible(true), []);
+  // pixel budget: retina / 4K desktops must not push 5-15 Mpx through the half-float post chain
+  const [budgetDpr] = useState(() => {
+    if (typeof window === "undefined") return 2;
+    const css = window.innerWidth * window.innerHeight;
+    return Math.max(1, Math.sqrt(PIXEL_BUDGET / Math.max(1, css)));
+  });
+  const maxDpr = Math.max(1, Math.min(budget.dpr[1], dpr, budgetDpr) * dprScale);
+  // incline also counts toward the monitor's flip-flops, so only declines may ever fire
+  const monitorBounds = useCallback((): [number, number] => [40, Number.POSITIVE_INFINITY], []);
 
   return (
     <div className={`absolute inset-0 ${className}`} data-tier={tier}>
@@ -179,40 +243,38 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
         <StaticSphere loading />
       </div>
       <div className={`absolute inset-0 mix-blend-screen transition-opacity duration-700 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
-      <Canvas
-        dpr={[budget.dpr[0], Math.max(1, Math.min(budget.dpr[1], dpr) * dprScale)]}
-        camera={{ fov: 40, near: 0.1, far: 50, position: [0, 0, 3.8] }}
-        gl={{ antialias: false, alpha: false, powerPreference: "high-performance", stencil: false, depth: false }}
-        flat
-        frameloop="always"
-        style={{ background: "transparent" }}
-        onCreated={({ gl }) => {
-          // cleared to pure black and screen-blended over the page: screen(bg, black) = bg, so
-          // no tone-map-dependent seam, and later phases can draw a grid behind the sphere
-          gl.setClearColor("#000000", 1);
-        }}
-      >
-        <CameraFit />
-        <ContextGuard onLost={onLost} onRestored={onRestored} />
-        {!pinned && monitor ? <PerformanceMonitor flipflops={3} onDecline={onDecline} onFallback={onFallback} /> : null}
-        <Suspense fallback={null}>
-          <SphereRig look={look} coarsePointer={coarsePointer} timeOffset={timeOffset}>
-            <Fragments look={look} budget={budget} onBuilt={onBuilt} timeOffset={timeOffset} />
-            <Vortex look={look} budget={budget} timeOffset={timeOffset} />
-            <CoreGlow look={look} timeOffset={timeOffset} />
-            <Particles look={look} budget={budget} timeOffset={timeOffset} />
-          </SphereRig>
-          <Effects look={look} budget={budget} />
-        </Suspense>
-        <Telemetry tier={tier} fragments={fragments} onFps={setFps} onFirstFrame={onFirstFrame} />
-      </Canvas>
+        <Canvas
+          dpr={[budget.dpr[0], maxDpr]}
+          camera={{ fov: 40, near: 0.1, far: 50, position: [0, 0, 3.8] }}
+          gl={{ antialias: false, alpha: false, powerPreference: "high-performance", stencil: false, depth: false }}
+          flat
+          frameloop="never"
+          style={{ background: "transparent" }}
+          onCreated={({ gl }) => {
+            // cleared to pure black and screen-blended over the page: screen(bg, black) = bg, so
+            // no tone-map-dependent seam, and later phases can draw a grid behind the sphere
+            gl.setClearColor("#000000", 1);
+          }}
+        >
+          <CameraFit />
+          <ContextGuard onLost={onLost} onRestored={onRestored} />
+          {!pinned && monitor ? <PerformanceMonitor bounds={monitorBounds} flipflops={3} onDecline={onDecline} onFallback={onFallback} /> : null}
+          <Suspense fallback={null}>
+            <SphereRig look={look} coarsePointer={coarsePointer} timeOffset={timeOffset}>
+              <Fragments look={look} budget={budget} onBuilt={onBuilt} timeOffset={timeOffset} />
+              <Vortex look={look} budget={budget} timeOffset={timeOffset} />
+              <CoreGlow look={look} timeOffset={timeOffset} />
+              <Particles look={look} budget={budget} timeOffset={timeOffset} />
+            </SphereRig>
+            <Effects look={look} budget={budget} />
+          </Suspense>
+          <Telemetry tier={tier} onReady={onReady} />
+          <VisibilityGate enabled={visible} />
+          <Warmup />
+        </Canvas>
       </div>
-      {showDebug ? <DebugPanel tier={tier} onLook={setLook} onTier={setTier} stats={stats} /> : null}
-      {!captureMode ? (
-        <div className="pointer-events-none absolute right-4 bottom-4 select-none text-right font-mono text-[10px] uppercase tracking-[0.22em] text-fg-dim/70">
-          core // phase 1 · tier {tier} · {fragments.toLocaleString()} fragments · {fps} fps
-        </div>
-      ) : null}
+      {showDebug ? <DebugPanel tier={tier} initialLook={initialLook} onLook={setLook} onTier={setTier} /> : null}
+      {!captureMode ? <Caption tier={tier} /> : null}
     </div>
   );
 }

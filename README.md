@@ -64,7 +64,11 @@ new defaults.
   sphere toward a module or park it in a corner.
 - `SphereStage.tsx` picks a tier (`src/lib/tier.ts`), lazy-loads the scene client-side, and shows
   the static poster (`public/sphere-static.webp`, a real capture blended with `screen`) before
-  the scene is ready, for `prefers-reduced-motion`, and when WebGL is unavailable.
+  the scene is ready, for `prefers-reduced-motion`, and when WebGL2 is unavailable.
+- `SphereScene.tsx` compiles the shaders before starting the render loop (so the first frame does
+  not stall the page), cross-fades from the poster after the second frame, pauses the loop while
+  the canvas is scrolled out of view, caps the pixel ratio to a ~4.5 Mpx budget on large retina
+  screens, and steps the pixel ratio and then the tier down if frames drop.
 
 Tier budgets (fragments / DPR cap / bloom mip levels): high 8000 / 2 / 7 · medium 6000 / 1.5 / 6 ·
 low 4200 / 1.5 / 5 (luminance pass off). If frames drop, the pixel ratio steps down first, then

@@ -37,8 +37,9 @@ export default function CoreGlow({ look, timeOffset = 0 }: { look: SphereLook; t
     const m = material.current;
     if (!m) return;
     const u = m.uniforms;
-    const halo = 0.9; // quad half-size in world units
-    u.uSize.value = halo;
+    // the 1x1 plane spans -0.5..0.5, so uSize 0.9 gives a quad half-size of 0.45 world units
+    const halo = 0.45;
+    u.uSize.value = 0.9;
     u.uCoreFrac.value = look.coreSize / halo;
     u.uHalo.value = look.haloStrength;
     u.uBreathe.value = look.breatheSpeed * Math.PI * 2;
