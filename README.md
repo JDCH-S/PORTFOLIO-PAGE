@@ -8,9 +8,19 @@ Stack: Next.js (App Router) · TypeScript · Tailwind · React Three Fiber + dre
 
 ## Status
 
-**Phase 1 — the sphere.** Only the sphere on a blank page, with a debug panel to tune it.
-Phases 2–4 (component structure and tokens, full site with load sequence and interactions,
-mobile and performance pass) follow after review.
+- **Phase 1 — the sphere**: approved. Still available on its own at `/sphere` with the tweak panel.
+- **Phase 2 — blueprint**: `docs/BLUEPRINT.md` (tokens, type, layouts, components, content schema,
+  load sequence, interactions).
+- **Phase 3 — the site**: built at `/`: load sequence, HUD, the three modules, beams, detail view,
+  desktop and mobile layouts.
+- **Phase 4 — mobile and performance pass**: headless checks done; real-device testing pending.
+
+## Adding your content
+
+Everything the modules show comes from `src/content/content.ts`. Replace the `PLACEHOLDER`
+entries with your own projects, agents and systems in the same shape (types in
+`src/content/types.ts`), and edit `profile` for your name, role, availability and links.
+Screenshots go in `public/` and are referenced by path. Nothing else needs touching.
 
 ## Run it
 
@@ -20,7 +30,7 @@ npm run dev        # http://localhost:3000
 npm run build && npm start
 ```
 
-Useful query parameters while reviewing:
+Useful query parameters while reviewing (they work on `/` and `/sphere`):
 
 | Query | Effect |
 |---|---|
@@ -29,7 +39,21 @@ Useful query parameters while reviewing:
 | `?t=8` | start the animation clocks at 8 s (handy for screenshots) |
 | `?capture=1` | hide the panel and caption (used to capture the poster) |
 
-## The tweak panel
+## How the site is built
+
+- `src/components/site/Site.tsx` is the client root: the sphere as a fixed, screen-blended layer
+  behind everything, the HUD ground, the load sequence, and the layout for the viewport
+  (`DesktopLayout` from 1024px, `MobileLayout` below).
+- The UI tells the sphere where to sit through a screen-space frame in `sphereStore.ts`
+  (`SphereSlot` on desktop, the hero and header emblem on mobile, the corner in the detail view).
+- `IntroSequence.tsx` runs `src/lib/sequence.ts`: sparks converge, shells assemble outer to inner,
+  the vortex ignites, `INITIALISING` types, the name decodes, beams draw, modules materialise,
+  items stagger. Skippable; remembered in localStorage; a 1s version on later visits; no intro
+  with reduced motion.
+- `components/modules/*` render the three modules from `content.ts`; `ItemButton` handles hover,
+  focus and the click that fires the fragment stream and opens `components/detail/DetailView`.
+
+## The tweak panel (`/sphere`)
 
 Every slider maps to a value in `src/components/sphere/config.ts` (`DEFAULT_LOOK`).
 Sliders marked **⟳** rebuild geometry (shell count, density, arc length, ragged, windows, cuts,

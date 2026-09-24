@@ -38,21 +38,21 @@ const css = (await postcss([tailwind({ base: root })]).process(cssIn, { from: pa
 
 // 3. Page
 const html = `<title>Holographic Core</title>
-<meta name="description" content="Phase 1 review of the holographic sphere: the core of the portfolio, with a tweak panel.">
+<meta name="description" content="Preview of the portfolio: projects, agents and systems around a holographic core.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
 ${css}
-:root { color-scheme: dark; --font-geist-sans: "Geist", system-ui, sans-serif; --font-geist-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
-html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); overflow: hidden; }
-#root, #root > main { height: 100%; }
-.h-dvh { height: 100%; }
+:root { color-scheme: dark; --font-chakra: "Chakra Petch", system-ui, sans-serif; --font-geist-sans: "Geist", system-ui, sans-serif; --font-geist-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); }
+#root { min-height: 100%; }
+.h-dvh { height: 100vh; height: 100dvh; }
 </style>
 <div id="root"></div>
 <script>${script}</script>
 `;
 fs.writeFileSync(path.join(out, "index.html"), html);
-fs.copyFileSync(path.join(root, "public/sphere-static.webp"), path.join(out, "sphere-static.webp"));
+for (const f of ["sphere-static.webp", "sphere-static-600.webp"]) fs.copyFileSync(path.join(root, "public", f), path.join(out, f));
 const size = fs.statSync(path.join(out, "index.html")).size;
 console.log(`wrote .preview/index.html (${(size / 1024 / 1024).toFixed(2)} MB), js ${(script.length / 1024).toFixed(0)} KB, css ${(css.length / 1024).toFixed(0)} KB`);
