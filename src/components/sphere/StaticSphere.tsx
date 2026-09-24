@@ -32,9 +32,8 @@ export default function StaticSphere({
         }}
       >
         <picture>
-          <source srcSet="/sphere-static.webp" type="image/webp" />
           <img
-            src="/sphere-static.png"
+            src="/sphere-static.webp"
             alt=""
             width={1200}
             height={1200}
