@@ -10,6 +10,11 @@ import { openSections, stepSection, up } from "@/lib/nav";
 
 const focus = (el: Element | null | undefined) => (el as HTMLElement | null)?.focus({ preventScroll: true });
 /** the visible option button for a module (the hidden copy sits under an inert ancestor) */
+/** the focus target inside an open section: its scroller (falls back to the panel) */
+export const sectionScroller = (id: ModuleId) => {
+  const panel = document.getElementById(`module-${id}`);
+  return panel?.querySelector<HTMLElement>("[data-scroll]") ?? panel;
+};
 const optionButton = (id: ModuleId) => Array.from(document.querySelectorAll<HTMLElement>(`[data-option="${id}"]`)).find((el) => !el.closest("[inert]"));
 
 /**
@@ -41,7 +46,7 @@ export default function Emergence({ desktop }: { desktop: boolean }) {
       mark("pointer");
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Tab" || e.key === "Enter" || e.key === "Escape" || e.key === " " || e.key.startsWith("Arrow") || e.key.startsWith("Page")) mark("keyboard");
+      if (e.key === "Tab" || e.key === "Enter" || e.key === "Escape" || e.key === " " || e.key.startsWith("Arrow")) mark("keyboard");
     };
     // screen readers, voice control and switch access activate with a synthetic click (detail 0)
     const onClick = (e: MouseEvent) => {
@@ -90,9 +95,13 @@ export default function Emergence({ desktop }: { desktop: boolean }) {
     if (replay) {
       setStep(4);
       ids.push(window.setTimeout(() => setStep(5), t.panel * 1000), window.setTimeout(() => setStep(6), t.items * 1000));
+    } else if (useSiteStore.getState().step < 6) {
+      // a tab change while the section was still appearing: finish the reveal, never leave it half drawn
+      setStep(5);
+      ids.push(window.setTimeout(() => setStep(6), Math.max(0, t.items - t.panel) * 1000));
     }
-    // the panel takes focus once its items are in, so Tab lands on the first item
-    if (byKeyboard) ids.push(window.setTimeout(() => focus(document.getElementById(`module-${activeModule}`)), replay ? t.items * 1000 + 80 : 0));
+    // the section's scroller takes focus once its items are in: arrows and Space scroll it, Tab reaches the first item
+    if (byKeyboard) ids.push(window.setTimeout(() => focus(sectionScroller(activeModule)), replay ? t.items * 1000 + 80 : 0));
     return () => ids.forEach((id) => window.clearTimeout(id));
   }, [view, activeModule, started, desktop, reduced, setStep]);
 
@@ -114,12 +123,13 @@ export default function Emergence({ desktop }: { desktop: boolean }) {
         openSections();
         return;
       }
-      // in a section, left/right step to the neighbouring section (arrow groups handle their own keys first)
+      // in a section, left/right step to the neighbouring section (arrow groups handle their own keys first;
+      // up/down, Page keys and Space keep scrolling the content)
       if (s.view === "module") {
-        if (e.key === "ArrowRight" || e.key === "PageDown") {
+        if (e.key === "ArrowRight") {
           e.preventDefault();
           stepSection(1);
-        } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        } else if (e.key === "ArrowLeft") {
           e.preventDefault();
           stepSection(-1);
         }

@@ -10,11 +10,11 @@ let attached = false;
 
 /**
  * Keeps the view and the URL in step: Back, Forward and typed hashes drive the view,
- * history is seeded once the load sequence is over, and changes are announced politely.
+ * and history is seeded once the load sequence is over. Screen readers hear each move from
+ * Next's route announcer (every level has its own document title).
  */
 export default function NavSync() {
   const phase = useSiteStore((s) => s.phase);
-  const announce = useSiteStore((s) => s.announce);
 
   useEffect(() => {
     if (attached) return;
@@ -39,9 +39,5 @@ export default function NavSync() {
     if (clash.length) console.error(`[nav] element ids collide with route words: ${clash.join(", ")}`);
   }, [phase]);
 
-  return (
-    <p className="sr-only" aria-live="polite" aria-atomic="true">
-      {announce}
-    </p>
-  );
+  return null;
 }

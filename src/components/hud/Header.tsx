@@ -19,14 +19,14 @@ export default function Header({ className = "" }: { className?: string }) {
   const reduced = useReducedMotion();
   const show = step >= 3;
   const name = (
-    <Decode as="h1" text={profile.name.toUpperCase()} active={show} reduced={reduced} className="font-display text-[26px] leading-[30px] font-semibold tracking-[0.06em] text-gold-hot" />
+    <Decode as="h1" text={profile.name.toUpperCase()} active={show} reduced={reduced} className="font-display text-[26px] leading-[30px] font-semibold tracking-[0.06em] whitespace-nowrap text-gold-hot" />
   );
   return (
     <header
       className={`flex items-start justify-between gap-6 transition-opacity duration-[480ms] ease-[var(--ease-out)] ${className}`}
       style={{ opacity: step >= 2 ? 1 : 0.35 }}
     >
-      <div className="min-w-0">
+      <div className="shrink-0">
         {view === "core" ? (
           name
         ) : (
@@ -35,14 +35,14 @@ export default function Header({ className = "" }: { className?: string }) {
             <span aria-hidden className="absolute -bottom-0.5 left-0 h-px w-full bg-gold opacity-0 transition-opacity duration-[240ms] group-hover:opacity-100 group-focus-visible:opacity-100" />
           </a>
         )}
-        <p className="label mt-1 flex flex-wrap items-center gap-x-2 text-steel">
+        <p className="label mt-1 flex items-center gap-x-2 whitespace-nowrap text-steel">
           <span>{profile.role}</span>
           <span aria-hidden className="text-steel-dim">
             ·
           </span>
           {emailHref ? (
             <a href={emailHref} className="group relative inline-flex min-h-6 items-center text-steel transition-colors hover:text-gold-hot focus-visible:text-gold-hot">
-              {availability} · email ↗
+              {availability} · email<span aria-hidden> ↗</span>
               <span aria-hidden className="absolute bottom-0.5 left-0 h-px w-full bg-gold opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
             </a>
           ) : (
@@ -50,7 +50,7 @@ export default function Header({ className = "" }: { className?: string }) {
           )}
         </p>
       </div>
-      <div aria-hidden className="hidden flex-1 items-center gap-[6px] self-center xl:flex">
+      <div aria-hidden className="hidden min-w-0 flex-1 items-center gap-[6px] self-center overflow-hidden xl:flex">
         {Array.from({ length: 40 }, (_, i) => (
           <span key={i} className={`block w-px bg-steel-line ${i % 5 === 0 ? "h-3" : "h-1.5"}`} />
         ))}

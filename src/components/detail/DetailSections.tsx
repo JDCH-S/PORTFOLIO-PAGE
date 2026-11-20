@@ -21,7 +21,7 @@ export default function DetailSections({ item }: { item: Item }) {
     item.category === "project" ? item.code : item.category === "agent" ? item.role : item.category === "skill" ? `v${item.version}` : `${item.nodes.length} nodes`;
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2">
         <div className="label flex flex-wrap items-center gap-3 text-gold">
           <span>{item.category}</span>
           <span className="text-steel-dim">·</span>
@@ -32,7 +32,7 @@ export default function DetailSections({ item }: { item: Item }) {
           {item.name}
         </h2>
         <p className="max-w-[68ch] text-[16px] leading-[26px] text-fg-dim">{item.tagline}</p>
-      </header>
+      </div>
 
       <Section label="problem">{item.problem}</Section>
       {item.category === "skill" ? (

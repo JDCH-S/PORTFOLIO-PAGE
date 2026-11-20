@@ -9,13 +9,13 @@ import Tag from "@/components/ui/Tag";
 /** Mission-file cards. */
 export default function ProjectsModule({ className = "" }: { className?: string }) {
   return (
-    <ModuleFrame id="projects" count={projects.length} status="mission files" className={className}>
+    <ModuleFrame id="projects" count={projects.length} status="case studies" className={className}>
       <ItemList>
         {projects.map((p) => (
           <ItemButton key={p.id} itemId={p.id} className="p-3">
             <div className="mb-1 flex items-baseline justify-between gap-3">
               <span className="label text-gold">{p.code}</span>
-              <span className="label text-steel-dim">mission file</span>
+              <span className="label text-steel-dim">case study</span>
             </div>
             <h3 id={`item-${p.id}-title`} className="font-display text-[16px] leading-[22px] font-semibold text-fg">
               <span className="sr-only">{p.code}: </span>

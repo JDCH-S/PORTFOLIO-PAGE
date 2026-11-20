@@ -91,19 +91,23 @@ The site has four levels, each with its own URL (hash only; the server route sta
   the sphere and every visible "‹" control go item → section → sections → home. Going deeper
   pushes a history entry; moving sideways (tabs, swipes, pagers, prev/next) replaces it, so Back
   never walks through siblings. A shared link to an item plays the short intro, opens it, and
-  Back goes to its section and then off the site. Refresh keeps the place. All history writes
-  live in `src/lib/nav.ts`.
+  Back goes to its section and then off the site. Refresh keeps the place and the history
+  (Back after a reload walks the same steps). A pop that lands on a stale entry (Forward after
+  a sideways move) is corrected, so Esc always ends on the parent. Hand-typed or capitalised
+  hashes work; an unreadable one falls back to home. All history writes live in
+  `src/lib/nav.ts`.
 - **One section list per view, always 01–05 in the same order**, the current one lit:
   desktop shows it in the header at home, as callouts in the sections view and as a spine under
   the parked sphere in a section (headed by "‹ all sections"); elsewhere the header shows a
   one-line trail, "home / sections / 02 agents". Phones show the spine in the sections view and
   tabs in a section. The section the visitor was last in stays lit.
 - **Visible ways out, in plain words**: "‹ all sections" (desktop spine), the trail, "× close"
-  at the end of the phone list, "‹ sections" with ‹ 02 / 05 › at the bottom of the phone screen
-  (thumb zone), the item breadcrumb "‹ 01 projects / prj-01" with prev / n / next, and a
-  pager at the end of every section. The name in the header always goes home.
-- **Phones**: a stray tap on the sphere inside a section does not navigate; it pulses the sphere
-  and lights "‹ sections". Swipes switch at 22% of the width (or a flick), the tab underline
+  at the end of the phone list, "‹ sections" with ← 02 / 05 → at the bottom of the phone screen
+  (thumb zone), the item breadcrumb "‹ 01 projects / prj-01" with ← prev / n / next →, and a
+  pager at the end of every section. "‹" only ever means up a level; sideways moves use ← →.
+  The name in the header always goes home, and "email ↗" sits in the header on both layouts.
+- **Phones**: a stray tap anywhere on the sphere inside a section (docked or mid-dock) does not
+  navigate; it pulses the sphere and lights "‹ sections". Swipes switch at 22% of the width (or a flick), the tab underline
   slides under the finger and 12px of the next section peeks in. The sheet closes with a
   downward pull from anywhere once its content is at the top.
 - **Words**: "home", "sections", "see my work"; never "core" or "module" in the interface.
@@ -180,7 +184,7 @@ src/
       Panel.tsx           glass panel: border, brackets, header row, expand on hover
     modules/
       ModuleFrame.tsx     title, index, status line, beam anchor ref, materialise animation
-      ProjectsModule.tsx  → ProjectCard.tsx (mission file: code, title, problem, built, stack tags, result)
+      ProjectsModule.tsx  → ProjectCard.tsx (case study: code, title, problem, built, stack tags, result)
       AgentsModule.tsx    → AgentUnit.tsx (name, role, ONLINE pulse, tools, ActivityGraph.tsx)
       SystemsModule.tsx   → SystemDiagram.tsx (nodes + FlowLines.tsx animated SVG edges)
     detail/
@@ -248,7 +252,9 @@ sections in a section and between items in an open item; arrow keys move within 
 action focus follows the view: the sphere, the section you came from, the opened section, the
 card of the item you closed. Focus is a 1px gold ring on ordinary controls, gold corner ticks
 on the sphere, and the hover state (hot title, rule) on the text-only sections, so nothing draws
-a container around them. Changes are announced through a polite live region.
+a container around them. Every level has its own document title, so Next's route announcer
+says each move once. Opening a section by keyboard focuses its scroller: ↑ ↓, Space and Page
+keys scroll it, ← → change section.
 
 ## 8. Assumptions to confirm
 

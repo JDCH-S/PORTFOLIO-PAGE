@@ -75,7 +75,7 @@ export default function ModuleFrame({ id, count, status, children, className = "
           </span>
         </div>
         {/* a horizontal finger swipe that starts in here belongs to the mobile tab strip */}
-        <div data-scroll className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin] [touch-action:pan-y]">
+        <div data-scroll tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none [scrollbar-width:thin] [touch-action:pan-y]">
           {children}
           <SectionPager id={id} />
         </div>

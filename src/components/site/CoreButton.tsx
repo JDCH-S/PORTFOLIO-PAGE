@@ -54,6 +54,16 @@ export default function CoreButton({ coarse = false }: { coarse?: boolean }) {
   }, [act]);
   // a vertical finger drag pitches the sphere, except where the page scrolls (the section view)
   const scrolls = coarse && view === "module" && !inDetail;
+
+  // on a short laptop screen the prompt rises to stay clear of the footer rule
+  const [footerTop, setFooterTop] = useState<number | null>(null);
+  useEffect(() => {
+    if (coarse || view !== "core") return;
+    const measure = () => setFooterTop(document.querySelector("footer")?.getBoundingClientRect().top ?? null);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [coarse, view]);
   const drag = useSpinDrag({ allowPitch: !scrolls, onTap });
 
   if (phase === "boot") return null;
@@ -117,8 +127,6 @@ export default function CoreButton({ coarse = false }: { coarse?: boolean }) {
           width: size,
           height: size,
           touchAction: scrolls ? "pan-y" : "none",
-          // under the sticky mobile header the tabs must win the tap
-          clipPath: frame?.clipTop ? `inset(${Math.max(0, frame.clipTop - (y - size / 2)).toFixed(1)}px 0 0 0)` : undefined,
           // the frame is re-pushed on every scroll in the section view: follow it directly, no lag
           transition: scrolls ? "none" : "left 480ms var(--ease-out), top 480ms var(--ease-out), width 480ms var(--ease-out), height 480ms var(--ease-out)",
         }}
@@ -132,8 +140,12 @@ export default function CoreButton({ coarse = false }: { coarse?: boolean }) {
         <div
           aria-hidden
           onClick={act}
-          className={`label pointer-events-auto absolute flex min-h-11 -translate-x-1/2 cursor-pointer items-center whitespace-nowrap transition-[opacity,color] duration-[480ms] ${focused ? "text-gold-hot" : "text-gold"}`}
-          style={{ left: x, top: y + size / 2 + (coarse ? 12 : 20), opacity: step >= 3 ? 1 : 0 }}
+          className={`label pointer-events-auto absolute flex min-h-11 max-w-[calc(100vw-32px)] -translate-x-1/2 cursor-pointer items-center text-center whitespace-nowrap max-[359px]:whitespace-normal transition-[opacity,color] duration-[480ms] ${focused ? "text-gold-hot" : "text-gold"}`}
+          style={{
+            left: x,
+            top: Math.min(y + size / 2 + (coarse ? 12 : 20), footerTop != null && !coarse ? footerTop - 48 : Infinity),
+            opacity: step >= 3 ? 1 : 0,
+          }}
         >
           <span className="inline-flex items-center gap-3">
             <span className="h-1.5 w-1.5 animate-[core-ping_1.8s_cubic-bezier(0,0,0.2,1)_infinite] rounded-full bg-gold" />

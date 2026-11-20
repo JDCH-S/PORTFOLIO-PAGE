@@ -34,17 +34,17 @@ function PrevNext({ item, className = "" }: { item: Item; className?: string }) 
       <button
         type="button"
         aria-disabled={!prev}
-        aria-label={prev ? `Previous: ${name(prev)}` : "No previous item"}
+        aria-label={prev ? `Previous item: ${name(prev)}` : "Previous item, none"}
         onClick={() => prev && stepItem(-1)}
         className={prev ? live : dead}
       >
-        ‹ prev
+        <span aria-hidden>←</span> prev
       </button>
       <span className="label text-steel" aria-hidden>
         {i + 1} / {n}
       </span>
-      <button type="button" aria-disabled={!next} aria-label={next ? `Next: ${name(next)}` : "No next item"} onClick={() => next && stepItem(1)} className={next ? live : dead}>
-        next ›
+      <button type="button" aria-disabled={!next} aria-label={next ? `Next item: ${name(next)}` : "Next item, none"} onClick={() => next && stepItem(1)} className={next ? live : dead}>
+        next <span aria-hidden>→</span>
       </button>
     </div>
   );
@@ -186,8 +186,8 @@ export default function DetailView() {
     <nav aria-label="Breadcrumb" className="min-w-0">
       <ol className="flex min-w-0 items-center gap-2">
         <li>
-          <button type="button" onClick={up} className={live} aria-label={`Back to ${place.section.title}`}>
-            ‹ {isDesktop ? <span className="text-steel-dim">{place.section.index}</span> : null}
+          <button type="button" onClick={up} className={live}>
+            <span aria-hidden>‹</span> {isDesktop ? <span className="text-steel-dim">{place.section.index}</span> : null}
             {place.section.title.toLowerCase()}
           </button>
         </li>
@@ -234,7 +234,7 @@ export default function DetailView() {
                   <span aria-hidden className="h-5 w-px bg-steel-line" />
                   <Kbd>esc</Kbd>
                   <button type="button" onClick={up} className="label flex h-11 items-center gap-2 rounded-[2px] border border-gold-line px-3 text-gold hover:border-gold hover:text-gold-hot">
-                    close ×
+                    close <span aria-hidden>×</span>
                   </button>
                 </div>
               </div>
@@ -267,7 +267,7 @@ export default function DetailView() {
                 <span aria-hidden className="absolute left-1/2 top-2 h-1 w-10 -translate-x-1/2 rounded-full bg-steel-dim" />
                 <div className="min-w-0 pt-2">{crumb}</div>
                 <button type="button" onClick={up} className="label mt-2 flex h-11 shrink-0 items-center gap-2 rounded-[2px] border border-gold-line px-3 text-gold">
-                  close ×
+                  close <span aria-hidden>×</span>
                 </button>
               </div>
               <div

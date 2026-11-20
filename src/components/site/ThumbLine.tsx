@@ -41,8 +41,9 @@ export default function ThumbLine() {
   const prev = i > 0 ? sectionById(sectionIds[i - 1]) : null;
   const next =
     i < sectionIds.length - 1 ? sectionById(sectionIds[i + 1]) : null;
+  // sideways is ← →; "‹" only ever means up a level
   const arrow =
-    "flex h-11 w-11 items-center justify-center font-mono text-[20px] leading-none transition-colors";
+    "flex h-11 w-11 items-center justify-center font-mono text-[18px] leading-none transition-colors";
 
   return (
     <>
@@ -70,19 +71,19 @@ export default function ThumbLine() {
           className={`label pointer-events-auto flex h-11 items-center pr-3 transition-colors duration-[240ms] ${flash ? "text-gold-hot" : "text-gold active:text-gold-hot"}`}
           style={flash ? { textShadow: GLOW_HOT } : undefined}
         >
-          ‹ sections
+          <span aria-hidden>‹&nbsp;</span>sections
         </a>
         <div className="pointer-events-auto flex items-center">
           <button
             type="button"
             aria-label={
-              prev ? `Previous section: ${prev.title}` : "No previous section"
+              prev ? `Previous section: ${prev.title}` : "Previous section, none"
             }
             aria-disabled={!prev}
             onClick={() => prev && stepSection(-1)}
             className={`${arrow} ${prev ? "text-gold active:text-gold-hot" : "text-steel-dim"}`}
           >
-            ‹
+            ←
           </button>
           <span className="label text-steel" aria-hidden>
             {sectionById(active).index} /{" "}
@@ -91,13 +92,13 @@ export default function ThumbLine() {
           <button
             type="button"
             aria-label={
-              next ? `Next section: ${next.title}` : "No next section"
+              next ? `Next section: ${next.title}` : "Next section, none"
             }
             aria-disabled={!next}
             onClick={() => next && stepSection(1)}
             className={`${arrow} ${next ? "text-gold active:text-gold-hot" : "text-steel-dim"}`}
           >
-            ›
+            →
           </button>
         </div>
       </nav>

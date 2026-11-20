@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* a phone on its side: the sphere moves beside the list, sections get no hero */
+@custom-variant landscape-short (@media (orientation: landscape) and (max-height: 500px));
+
 /* ------------------------------------------------------------------ tokens
    The only source of colour, type, spacing and motion values. See docs/BLUEPRINT.md.
 */
@@ -30,7 +33,7 @@
   --offline: #ff5c5c;
 
   --glass: rgba(7, 11, 25, 0.58);
-  --glass-solid: rgba(7, 11, 25, 0.94);
+  --glass-solid: rgb(7, 11, 25);
   --glass-blur: 10px;
 
   --font-display: var(--font-chakra), system-ui, sans-serif;
@@ -124,7 +127,7 @@ body {
   background: var(--glass);
   backdrop-filter: blur(var(--glass-blur));
 }
-/* for reading surfaces: near-opaque, no blur (a blur over the live canvas costs every frame) */
+/* for reading surfaces: opaque (text behind never shows through), no blur (a blur over the live canvas costs every frame) */
 .glass-solid {
   background: var(--glass-solid);
 }

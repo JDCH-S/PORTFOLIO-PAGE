@@ -59,7 +59,7 @@ Useful query parameters while reviewing (they work on `/` and `/sphere`):
   replaces, and Esc, Back, the sphere and every "‹" control go up one level. `NavSync.tsx`
   applies Back/Forward and deep links; `src/lib/route.ts` parses and formats the hash.
   `Emergence.tsx` times the reveals and moves focus after keyboard actions.
-- Five sections: **Projects** (mission files), **Agents** (live units), **Skills** (the reusable
+- Five sections: **Projects** (case studies), **Agents** (live units), **Skills** (the reusable
   skills the agents load: trigger, tools, which agents use them), **Systems** (architecture
   diagrams) and **About** (bio, facts, timeline, links; no items to open).
 - `components/modules/*` render the three modules from `content.ts`; `ItemButton` handles hover,

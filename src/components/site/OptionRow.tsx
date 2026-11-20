@@ -67,11 +67,11 @@ export default function OptionRow({ id, index, title, count, hint, order, curren
         className={`font-display text-[15px] leading-[20px] font-medium tracking-[0.22em] transition-colors duration-[240ms] ${on ? "text-gold-hot" : "text-gold"}`}
         style={{ textShadow: on ? GLOW_HOT : GLOW }}
       />
-      {/* the rule under the title: focus, hover and "you are here" */}
+      {/* the rule under the title: full for focus and hover, faint for "you are here", so the two never look alike */}
       <span
         aria-hidden
         className="absolute -bottom-1 left-0 h-px bg-gold transition-[width,opacity] duration-[240ms]"
-        style={{ width: hovered || focused || current ? "100%" : 0, opacity: hovered || focused || current ? 1 : 0 }}
+        style={{ width: hovered || focused || current ? "100%" : 0, opacity: hovered || focused ? 1 : current ? 0.35 : 0 }}
       />
     </span>
   );

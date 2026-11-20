@@ -6,6 +6,7 @@ import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
 import { openItem } from "@/lib/nav";
+import { sectionOfItem } from "@/content/content";
 
 interface Stream {
   id: string;
@@ -35,7 +36,7 @@ export default function FragmentStream() {
       const len = Math.hypot(dx, dy) || 1;
       sphere.pulseToward(dx / len, dy / len, 1);
       if (reduced) {
-        openItem(id);
+        if (useSiteStore.getState().phase === "idle") openItem(id);
         return;
       }
       const to = Array.from({ length: COUNT }, () => ({
@@ -48,8 +49,10 @@ export default function FragmentStream() {
       timers.current.forEach((t) => window.clearTimeout(t));
       timers.current = [
         window.setTimeout(() => {
-          // the item is opened through nav, so it gets its own history entry
-          if (useSiteStore.getState().phase === "idle") openItem(id);
+          // the item is opened through nav, so it gets its own history entry; any move made
+          // during the burst (another section, Esc) wins and the open is dropped
+          const s = useSiteStore.getState();
+          if (s.phase === "idle" && s.view === "module" && s.activeModule === sectionOfItem(id)) openItem(id);
           timers.current.push(window.setTimeout(() => setStream(null), 200));
         }, 260),
       ];

@@ -53,9 +53,6 @@ export interface SiteState {
   /** what drove the last change; focus only moves for keyboard and assistive-tech input */
   lastInput: "pointer" | "keyboard";
   setLastInput: (input: "pointer" | "keyboard") => void;
-  /** text for the polite live region */
-  announce: string;
-  setAnnounce: (text: string) => void;
 }
 
 export const useSiteStore = create<SiteState>((set) => ({
@@ -70,7 +67,6 @@ export const useSiteStore = create<SiteState>((set) => ({
   lastModule: null,
   lastItem: null,
   lastInput: "pointer",
-  announce: "",
   setPhase: (phase) => set({ phase }),
   setStep: (step) => set({ step }),
   setIntroSeen: (introSeen) => set({ introSeen }),
@@ -84,5 +80,4 @@ export const useSiteStore = create<SiteState>((set) => ({
   setHover: (hover) => set({ hover }),
   setAnchor: (id, el) => set((s) => (s.anchors[id] === el ? s : { anchors: { ...s.anchors, [id]: el } })),
   setLastInput: (lastInput) => set((s) => (s.lastInput === lastInput ? s : { lastInput })),
-  setAnnounce: (announce) => set({ announce }),
 }));

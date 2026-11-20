@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { animate, m, useMotionValue, useMotionValueEvent, type PanInfo } from "framer-motion";
-import { profile, sectionIds, sections } from "@/content/content";
+import { emailHref, profile, sectionIds, sections } from "@/content/content";
 import type { ModuleId } from "@/content/types";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
-import { useReducedMotion } from "@/lib/useMediaQuery";
+import { useMediaQuery, useReducedMotion } from "@/lib/useMediaQuery";
 import { HOME, home, navLink, openSection, up } from "@/lib/nav";
 import { rovingKeys } from "@/lib/roving";
 import Decode from "@/components/ui/Decode";
@@ -28,10 +28,10 @@ const PANES: Record<ModuleId, React.ComponentType<{ className?: string; compact?
 };
 const N = sectionIds.length;
 const EMBLEM = 40;
-/** how much of the next section shows at the right edge: a hint that the panes swipe */
+/** how much of the next section shows at the right edge: a hint that the panes swipe (it fades out
+ * below the section's top, so it never ends as a stray edge mid-page) */
 const PEEK = 12;
 const SPRING = { type: "spring", stiffness: 300, damping: 34 } as const;
-const LANDSCAPE = "[@media(orientation:landscape)_and_(max-height:500px)]";
 
 /**
  * Mobile. Home: the name over the hologram. Sections: a compact sphere with the five
@@ -46,6 +46,8 @@ export default function MobileLayout() {
   const active = useSiteStore((s) => s.activeModule);
   const lastModule = useSiteStore((s) => s.lastModule);
   const reduced = useReducedMotion();
+  // a phone on its side: the list sits beside the sphere, too narrow for the centred spine
+  const landscape = useMediaQuery("(orientation: landscape) and (max-height: 500px)");
   const hero = useRef<HTMLDivElement>(null);
   const header = useRef<HTMLElement>(null);
   const tabs = useRef<HTMLElement>(null);
@@ -96,9 +98,9 @@ export default function MobileLayout() {
       sphere.setFrame({
         x: hr.left + hr.width / 2 + (ex - (hr.left + hr.width / 2)) * t,
         y: hr.top + hr.height / 2 + (ey - (hr.top + hr.height / 2)) * t,
+        // the whole drawn sphere is its tap target (a stray tap only pulses it); the round
+        // button leaves the tabs and the name beside it tappable
         size: heroSize + (EMBLEM - heroSize) * t,
-        // until it has docked, the touch target stops at the header's edge so the tabs stay tappable
-        clipTop: p < 1 ? top : 0,
       });
     };
     push();
@@ -170,7 +172,10 @@ export default function MobileLayout() {
   // keep the active tab visible in the strip
   useEffect(() => {
     if (view !== "module") return;
-    document.querySelector<HTMLElement>(`[data-tab="${active}"]`)?.scrollIntoView({ inline: "center", block: "nearest", behavior: reduced ? "auto" : "smooth" });
+    // scroll the strip, not the tab: scrollIntoView would also move the browser's Tab starting point
+    const nav = tabs.current;
+    const t = nav?.querySelector<HTMLElement>(`[data-tab="${active}"]`);
+    if (nav && t) nav.scrollTo({ left: t.offsetLeft - (nav.clientWidth - t.offsetWidth) / 2, behavior: reduced ? "auto" : "smooth" });
   }, [active, view, reduced]);
 
   // after switching section deep in a long one, bring the new section's title up under the header
@@ -232,7 +237,17 @@ export default function MobileLayout() {
             <span aria-hidden className="absolute -bottom-0.5 left-0 h-px w-full bg-gold opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100" />
           </a>
         )}
-        <p className="label truncate text-steel">{profile.role}</p>
+        <p className="label truncate text-steel">
+          {profile.role}
+          {emailHref ? (
+            <>
+              {" · "}
+              <a href={emailHref} className="text-gold transition-colors hover:text-gold-hot focus-visible:text-gold-hot">
+                email<span aria-hidden> ↗</span>
+              </a>
+            </>
+          ) : null}
+        </p>
       </div>
     );
   };
@@ -254,33 +269,36 @@ export default function MobileLayout() {
         <header className="px-4" style={{ paddingTop: "calc(12px + env(safe-area-inset-top, 0px))" }}>
           {nameBlock("lg")}
         </header>
-        <main id="content" className={`flex min-h-0 flex-1 flex-col ${LANDSCAPE}:flex-row ${LANDSCAPE}:items-center`}>
-          <div ref={hero} aria-hidden className={`min-h-0 flex-1 ${LANDSCAPE}:h-full`} />
+        <main id="content" className={"flex min-h-0 flex-1 flex-col landscape-short:flex-row landscape-short:items-center"}>
+          <div ref={hero} aria-hidden className={"min-h-0 flex-1 landscape-short:h-full"} />
           <nav
             id="sections-list"
             aria-label="Sections"
             onKeyDown={rovingKeys("[data-option], [data-up]")}
-            className={`relative flex flex-col px-4 pt-5 sm:mx-auto sm:w-[min(100%,440px)] ${LANDSCAPE}:w-[min(46%,320px)] ${LANDSCAPE}:justify-center ${LANDSCAPE}:pt-0`}
+            className={"relative flex flex-col px-4 pt-5 sm:mx-auto sm:w-[min(100%,440px)] landscape-short:mx-0 landscape-short:w-[min(46%,320px)] landscape-short:justify-center landscape-short:pt-0"}
             style={{ paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))" }}
           >
             {/* spine: down from the sphere, through the section shards, ending on "close" */}
             <span
               aria-hidden
-              className={`pointer-events-none absolute -top-16 left-1/2 w-px bg-gradient-to-b from-transparent via-gold-line to-gold-line transition-opacity duration-[480ms] ${LANDSCAPE}:hidden`}
+              className={`pointer-events-none absolute -top-16 left-1/2 w-px bg-gradient-to-b from-transparent via-gold-line to-gold-line transition-opacity duration-[480ms] landscape-short:hidden`}
               style={{ bottom: "calc(30px + env(safe-area-inset-bottom, 0px))", opacity: step >= 4 ? 1 : 0 }}
             />
             {sections.map((s, i) => (
-              <OptionRow key={s.id} layout="spine" id={s.id} index={s.index} title={s.title} hint={s.hint} count={s.count} order={i} lit={s.id === lastModule} />
+              <OptionRow key={s.id} layout={landscape ? "row" : "spine"} id={s.id} index={s.index} title={s.title} hint={s.hint} count={s.count} order={i} lit={s.id === lastModule} />
             ))}
             {/* the visible way back, where the thumb is */}
             <a
               {...navLink(HOME, up)}
               data-up
-              className={`group mt-1 grid min-h-11 grid-cols-[1fr_auto_1fr] items-center gap-3 outline-none transition-opacity duration-[480ms] ${step >= 4 ? "opacity-100" : "opacity-0"}`}
+              className={`group mt-1 grid min-h-11 grid-cols-[1fr_auto_1fr] items-center gap-3 outline-none transition-opacity duration-[480ms] landscape-short:flex ${step >= 4 ? "opacity-100" : "opacity-0"}`}
             >
-              <span />
+              <span className="landscape-short:w-4" />
               <span aria-hidden className="h-[7px] w-[7px] rounded-full border border-gold-line bg-bg group-hover:border-gold-hot group-focus-visible:border-gold-hot" />
-              <span className="label text-steel group-hover:text-gold-hot group-focus-visible:text-gold-hot group-active:text-gold-hot">× close</span>
+              <span className="label relative text-steel group-hover:text-gold-hot group-focus-visible:text-gold-hot group-active:text-gold-hot">
+                <span aria-hidden>× </span>close
+                <span aria-hidden className="absolute -bottom-1 left-0 h-px w-full bg-gold opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+              </span>
             </a>
           </nav>
         </main>
@@ -291,7 +309,7 @@ export default function MobileLayout() {
   return (
     <div className="relative z-10 min-h-dvh">
       {/* sticky header: emblem (opens as the sphere docks) + name + tabs */}
-      <header ref={header} className="glass-solid sticky top-0 z-20 border-b border-steel-line" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
+      <header ref={header} className="sticky top-0 z-20 bg-bg border-b border-steel-line" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         <div className="flex items-center px-4 py-2">
           <div data-emblem aria-hidden className="h-10 shrink-0" style={{ width: `calc(var(--dock, 0) * ${EMBLEM}px)`, marginRight: "calc(var(--dock, 0) * 12px)" }} />
           {nameBlock("sm")}
@@ -310,7 +328,6 @@ export default function MobileLayout() {
                 key={s.id}
                 href={link.href}
                 data-tab={s.id}
-                aria-label={s.title}
                 aria-current={on ? "page" : undefined}
                 onClick={(e) => {
                   if (on) {
@@ -323,10 +340,12 @@ export default function MobileLayout() {
                   }
                   link.onClick(e);
                 }}
-                className={`label flex h-11 flex-1 items-center justify-center gap-1.5 px-2 whitespace-nowrap transition-colors max-[374px]:px-1 max-[374px]:tracking-[0.1em]! ${on ? "text-gold-hot" : "text-steel"}`}
+                className={`group relative label flex h-11 flex-1 items-center justify-center gap-1.5 px-2 whitespace-nowrap outline-none transition-colors focus-visible:text-gold-hot max-[374px]:px-1 max-[374px]:tracking-[0.1em]! ${on ? "text-gold-hot" : "text-steel"}`}
               >
                 <span className="hidden text-steel-dim min-[490px]:inline">{s.index}</span>
                 {s.title}
+                {/* keyboard focus, drawn inside the strip (an outline would be clipped by its scroll box) */}
+                <span aria-hidden className="pointer-events-none absolute inset-x-1 top-1 bottom-1 rounded-[2px] border border-gold opacity-0 group-focus-visible:opacity-100" />
               </a>
             );
           })}
@@ -336,7 +355,7 @@ export default function MobileLayout() {
 
       <main id="content">
         {/* hero: the sphere sits here and shrinks into the emblem on scroll (none in short landscape) */}
-        <div aria-hidden className={`relative h-[min(56vw,320px,60vh)] ${LANDSCAPE}:h-0`}>
+        <div aria-hidden className={"relative h-[min(56vw,320px,60vh)] landscape-short:h-0"}>
           <div ref={hero} className="absolute inset-x-0 top-0 h-full" />
         </div>
 
@@ -368,7 +387,7 @@ export default function MobileLayout() {
                   ref={(el) => {
                     panes.current[id] = el;
                   }}
-                  className={`shrink-0 pr-3 pb-6 ${active !== id ? "[content-visibility:auto] [contain-intrinsic-size:0_800px]" : ""}`}
+                  className={`shrink-0 pr-3 pb-6 ${active !== id ? "[content-visibility:auto] [contain-intrinsic-size:0_800px] [mask-image:linear-gradient(to_bottom,#000_0,#000_180px,transparent_360px)]" : ""}`}
                   style={{ width: paneW || `${100 / N}%` }}
                   aria-hidden={active !== id}
                   inert={active !== id}

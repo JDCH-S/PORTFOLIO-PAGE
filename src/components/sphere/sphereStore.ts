@@ -48,7 +48,7 @@ export interface SphereState {
    * Where the sphere should sit on screen, in CSS pixels (centre + diameter), or null for the
    * default centred framing. The scene converts this into scale and offset targets.
    */
-  frame: { x: number; y: number; size: number; clipTop?: number } | null;
+  frame: { x: number; y: number; size: number } | null;
   /** the intro wants a black start: keep the loading poster hidden */
   hidePoster: boolean;
   pulseToward: (x: number, y: number, strength?: number) => void;
@@ -59,7 +59,7 @@ export interface SphereState {
   setTier: (tier: "high" | "medium" | "low" | "static") => void;
   setReady: (ready: boolean) => void;
   setIntro: (v: Partial<{ assemble: number; ignite: number; converge: number }>) => void;
-  setFrame: (frame: { x: number; y: number; size: number; clipTop?: number } | null) => void;
+  setFrame: (frame: { x: number; y: number; size: number } | null) => void;
   setHidePoster: (hide: boolean) => void;
 }
 

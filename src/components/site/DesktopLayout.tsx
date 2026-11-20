@@ -50,9 +50,9 @@ export default function DesktopLayout() {
       <main id="content" className="grid min-h-0">
         {view === "module" ? (
           <div className="grid min-h-0 grid-cols-[minmax(280px,1fr)_minmax(560px,2.2fr)] gap-4 xl:gap-6">
-            <div className="grid min-h-0 grid-rows-[minmax(0,1.2fr)_auto] gap-3">
+            <div className="grid min-h-0 grid-rows-[minmax(0,1.2fr)_auto] gap-2">
               <SphereSlot className="min-h-0" fill={0.84} />
-              <nav aria-label="Sections" onKeyDown={rovingKeys("[data-option], [data-up]")} className="relative mx-auto flex w-full max-w-[440px] flex-col pt-3 pb-1">
+              <nav aria-label="Sections" onKeyDown={rovingKeys("[data-option], [data-up]")} className="relative mx-auto flex w-full max-w-[440px] flex-col pt-2 pb-1">
                 {/* spine: down from the sphere, through the head and every section */}
                 <span
                   aria-hidden
@@ -64,10 +64,12 @@ export default function DesktopLayout() {
                   data-up
                   className={`group grid min-h-11 grid-cols-[1fr_auto_1fr] items-center gap-3 outline-none transition-opacity duration-[480ms] ${step >= 4 ? "opacity-100" : "opacity-0"}`}
                 >
-                  <span className="label text-right text-steel-dim">esc</span>
+                  <span aria-hidden className="label text-right text-steel-dim">esc</span>
                   <span aria-hidden className={`h-[7px] w-[7px] rounded-full border transition-colors duration-[240ms] ${sphereHover ? "border-gold-hot bg-gold-hot/30" : "border-gold-line bg-bg group-hover:border-gold-hot group-focus-visible:border-gold-hot"}`} />
                   <span className="relative justify-self-start">
-                    <span className={`label transition-colors duration-[240ms] ${sphereHover ? "text-gold-hot" : "text-steel group-hover:text-gold-hot group-focus-visible:text-gold-hot"}`}>‹ all sections</span>
+                    <span className={`label transition-colors duration-[240ms] ${sphereHover ? "text-gold-hot" : "text-steel group-hover:text-gold-hot group-focus-visible:text-gold-hot"}`}>
+                      <span aria-hidden>‹ </span>all sections
+                    </span>
                     <span
                       aria-hidden
                       className={`absolute -bottom-1 left-0 h-px w-full bg-gold transition-opacity duration-[240ms] ${sphereHover ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"}`}
@@ -88,7 +90,7 @@ export default function DesktopLayout() {
 
       <footer className="flex items-center justify-between gap-6 border-t border-steel-line pt-3">
         <Telemetry />
-        <p className="label hidden text-steel md:block">{HINT[view]}</p>
+        <p className="label hidden whitespace-nowrap text-steel min-[1200px]:block">{HINT[view]}</p>
       </footer>
       <Beams />
     </div>

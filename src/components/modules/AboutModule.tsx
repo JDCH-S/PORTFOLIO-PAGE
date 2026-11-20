@@ -51,7 +51,7 @@ export default function AboutModule({ className = "" }: { className?: string; co
                 .map((f) => (
                   <div key={f.label} className="contents">
                     <dt className="label text-steel">{f.label}</dt>
-                    <dd className="text-fg">{f.value}</dd>
+                    <dd className="text-fg [overflow-wrap:anywhere]">{f.value}</dd>
                   </div>
                 ))}
             </dl>

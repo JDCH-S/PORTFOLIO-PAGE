@@ -17,7 +17,13 @@ const isSection = (s: string): s is ModuleId => (sectionIds as string[]).include
 
 /** Reads a location hash. Unknown words fall back to home; an item under the wrong section is corrected. */
 export function parse(hash: string): Route {
-  const raw = decodeURIComponent(hash.replace(/^#/, "")).trim();
+  let raw = hash.replace(/^#/, "");
+  try {
+    raw = decodeURIComponent(raw);
+  } catch {
+    // a cut-off or stray "%": read the hash as it is
+  }
+  raw = raw.trim().toLowerCase();
   if (!raw) return HOME;
   const [head, tail] = raw.split("/");
   if (head === "sections") return SECTIONS;
@@ -68,33 +74,13 @@ export function routeFromView(view: "core" | "menu" | "module", activeModule: Mo
 
 /** Browser tab title per level. */
 export function titleFor(r: Route, base: string): string {
+  if (r.depth === 1) return `Sections · ${profile.name}`;
   if (r.depth === 2) return `${sectionById(r.section).title} · ${profile.name}`;
   if (r.depth === 3) {
     const item = findItem(r.item);
     return `${item?.name.replace(/^PLACEHOLDER · /, "") ?? r.item} · ${sectionById(r.section).title} · ${profile.name}`;
   }
   return base;
-}
-
-/** What the polite live region says after a change (null: say nothing, focus already announces it). */
-export function announceFor(r: Route, byPointer: boolean): string | null {
-  switch (r.depth) {
-    case 0:
-      return "Home.";
-    case 1:
-      return `Sections, ${sectionIds.length} sections.`;
-    case 2: {
-      if (!byPointer) return null;
-      const s = sectionById(r.section);
-      const n = sectionIds.indexOf(r.section) + 1;
-      return `${s.title}, section ${n} of ${sectionIds.length}${s.count !== undefined ? `, ${s.count} items` : ""}.`;
-    }
-    case 3: {
-      const item = findItem(r.item);
-      const s = sectionById(r.section);
-      return `${item?.name.replace(/^PLACEHOLDER · /, "") ?? r.item}, in ${s.title}.`;
-    }
-  }
 }
 
 /** Words the hash may hold. No element id may equal one, or the browser would scroll-jump to it. */

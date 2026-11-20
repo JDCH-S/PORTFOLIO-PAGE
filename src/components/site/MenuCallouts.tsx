@@ -27,9 +27,11 @@ interface Geo {
   side: "left" | "right" | "bottom";
   label: { x: number; y: number };
   angle: number;
+  /** no room for the hover blurb above the footer: it stays for screen readers only */
+  tight: boolean;
 }
 
-function layout(frame: { x: number; y: number; size: number } | null, w: number, h: number): Geo[] {
+function layout(frame: { x: number; y: number; size: number } | null, w: number, h: number, footerTop: number): Geo[] {
   const aspect = w / Math.max(1, h);
   const size = frame ? frame.size : (aspect < 0.8 ? 0.88 : 0.72) * Math.min(w, h);
   const cx = frame ? frame.x : w / 2;
@@ -42,10 +44,12 @@ function layout(frame: { x: number; y: number; size: number } | null, w: number,
     const rim = { x: cx + ux * r * 0.985, y: cy + uy * r * 0.985 };
     const elbow = { x: cx + ux * (r + ELBOW), y: cy + uy * (r + ELBOW) };
     const side: Geo["side"] = s.angle === 90 ? "bottom" : ux < 0 ? "left" : "right";
-    // on short viewports the bottom callout's leader shortens so its blurb stays above the footer
-    if (side === "bottom") elbow.y = Math.min(elbow.y, h - 128);
+    // on short viewports the bottom callout's leader shortens so its title, hint and blurb
+    // (about 90px below the elbow) stay above the footer rule
+    if (side === "bottom") elbow.y = Math.max(rim.y + 10, Math.min(elbow.y, footerTop - 100));
     const label = side === "bottom" ? { x: elbow.x, y: elbow.y + 8 } : { x: elbow.x + (side === "right" ? ARM + 6 : -(ARM + 6)), y: elbow.y };
-    return { id: s.id, rim, elbow, side, label, angle: s.angle };
+    const tight = side === "bottom" && footerTop - elbow.y < 96;
+    return { id: s.id, rim, elbow, side, label, angle: s.angle, tight };
   });
 }
 
@@ -73,7 +77,10 @@ export default function MenuCallouts() {
   useEffect(() => {
     // while hidden the geometry stays put, so the leaders retract where they were drawn
     if (view !== "menu") return;
-    const update = () => setGeo(layout(useSphereStore.getState().frame, window.innerWidth, window.innerHeight));
+    const update = () => {
+      const footerTop = document.querySelector("footer")?.getBoundingClientRect().top ?? window.innerHeight;
+      setGeo(layout(useSphereStore.getState().frame, window.innerWidth, window.innerHeight, footerTop));
+    };
     update();
     // the sphere glides into its frame; re-measure while it settles
     const settle = [150, 350, 650].map((ms) => window.setTimeout(update, ms));
@@ -194,7 +201,7 @@ export default function MenuCallouts() {
                 <span aria-hidden className="label hidden whitespace-nowrap text-steel min-[1100px]:block">
                   {spec.hint}
                 </span>
-                <span id={`opt-${g.id}-blurb`} className={`font-mono text-[12px] leading-[18px] text-steel transition-opacity duration-[240ms] ${active ? "opacity-100" : "opacity-0"}`}>
+                <span id={`opt-${g.id}-blurb`} className={`font-mono text-[12px] leading-[18px] text-steel transition-opacity duration-[240ms] ${g.tight ? "sr-only" : active ? "opacity-100" : "opacity-0"}`}>
                   {spec.blurb}
                 </span>
               </span>
