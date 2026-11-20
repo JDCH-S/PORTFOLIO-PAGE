@@ -11,7 +11,7 @@ import { linkedRoute } from "@/lib/nav";
 type Mode = "full" | "quick" | "none";
 
 /**
- * Drives the load sequence: sphere intro uniforms, the reveal steps, the INITIALISING
+ * Drives the load sequence: hologram intro uniforms (once the head is built), the reveal steps, the INITIALISING
  * line and the skip control. Plays in full on the first visit, quickly afterwards,
  * and not at all with reduced motion or without WebGL.
  */
@@ -29,24 +29,24 @@ export default function IntroSequence({ desktop, reduced }: { desktop: boolean; 
   const [mode] = useState<Mode>(() => (reduced ? "none" : readIntroSeen() || linkedRoute().depth > 0 ? "quick" : "full"));
   const ctrl = useRef<{ skip: () => void; cancel: () => void } | null>(null);
 
-  // put the sphere in its dark scattered state before it renders
+  // put the hologram in its dark, unbuilt state before it renders. The (blurred) loading poster, painted with the
+  // page, stays up while the head builds (a black hero for seconds reads as broken); the live canvas cross-fades over
+  // it the moment the head is ready, and the head then scans in from the dark.
   useEffect(() => {
     setIntroSeen(mode !== "full");
     const sphere = useSphereStore.getState();
-    if (mode !== "none") {
-      sphere.setIntro({ converge: 0, assemble: 0, ignite: 0 });
-      sphere.setHidePoster(true);
-    }
+    if (mode !== "none") sphere.setIntro({ converge: 0, assemble: 0, ignite: 0 });
   }, [mode, setIntroSeen]);
 
   const started = useRef(false);
+  // the page was revealed while the head was still building: only the head's scan-in is left to play
+  const revealed = useRef(false);
   useEffect(() => {
     if (started.current) return;
     const sphere = useSphereStore.getState();
     const finishInstantly = () => {
       started.current = true;
       sphere.setIntro({ converge: 1, assemble: 1, ignite: 1 });
-      sphere.setHidePoster(false);
       setStep(INTRO_LAST_STEP);
       setPhase("idle");
     };
@@ -55,18 +55,38 @@ export default function IntroSequence({ desktop, reduced }: { desktop: boolean; 
       return;
     }
     if (!ready) {
-      // the scene is still loading: give it a few seconds, then reveal the page anyway
-      const id = window.setTimeout(finishInstantly, 6000);
-      return () => window.clearTimeout(id);
+      if (revealed.current) return;
+      // the scene is still loading: after a few seconds the page itself is revealed. If no build is running (the
+      // scene never mounted), the head is shown built; if one is, the head stays dark (the poster shows) and scans in
+      // the moment it is ready (below), instead of fading in already built.
+      const reveal = window.setTimeout(() => {
+        if (!useSphereStore.getState().building) {
+          finishInstantly();
+          return;
+        }
+        revealed.current = true;
+        setStep(INTRO_LAST_STEP);
+        setPhase("idle");
+      }, 6000);
+      return () => window.clearTimeout(reveal);
     }
     started.current = true;
-    setPhase("intro");
     const tl = TIMELINES[desktop ? "desktop" : "mobile"][mode];
+    if (revealed.current) {
+      // late head: the page is already up, so play only the head's part of the timeline (no steps, no skip overlay)
+      const c = runIntro(tl, {
+        onIntro: (v) => useSphereStore.getState().setIntro(v),
+        onStep: () => {},
+        onDone: () => writeIntroSeen(),
+      });
+      ctrl.current = c;
+      return;
+    }
+    setPhase("intro");
     const c = runIntro(tl, {
       onIntro: (v) => useSphereStore.getState().setIntro(v),
       onStep: (s) => setStep(s),
       onDone: () => {
-        useSphereStore.getState().setHidePoster(false);
         setPhase("idle");
         writeIntroSeen();
       },
@@ -75,7 +95,7 @@ export default function IntroSequence({ desktop, reduced }: { desktop: boolean; 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" || e.key === "Enter" || e.key === " ") c.skip();
     };
-    // any press skips too, and the press still counts (a click on the sphere opens the sections)
+    // any press skips too, and the press still counts (a click on the hologram opens the sections)
     const onPointer = () => c.skip();
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onPointer, true);

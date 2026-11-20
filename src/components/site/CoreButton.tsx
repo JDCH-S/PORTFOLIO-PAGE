@@ -81,7 +81,7 @@ export default function CoreButton({ coarse = false }: { coarse?: boolean }) {
   const pointerOnly = inDetail || (coarse && view === "module");
   const label = home ? "Show the sections" : menu ? "Hide the sections" : inDetail ? "Close the item" : "Back to all sections";
   const verb = coarse ? "tap to see my work" : "click to see my work";
-  const prompt = home ? (isStatic ? verb : `${verb} · drag to rotate`) : null;
+  const prompt = home ? (isStatic ? verb : `${verb} · drag to turn`) : null;
   // desktop captions say what a click on the sphere does right now
   const caption = !coarse && (pointing || focused) ? (menu ? "× close sections" : inDetail ? "× close" : null) : null;
 
@@ -106,7 +106,11 @@ export default function CoreButton({ coarse = false }: { coarse?: boolean }) {
           drag.onPointerDown(e);
         }}
         onPointerMove={drag.onPointerMove}
-        onPointerUp={drag.onPointerUp}
+        onPointerUp={(e) => {
+          // the click that follows a pointer release (a drag included) is the drag hook's to judge
+          pointerAt.current = performance.now();
+          drag.onPointerUp(e);
+        }}
         onPointerCancel={drag.onPointerCancel}
         onPointerEnter={(e) => {
           if (e.pointerType !== "mouse") return;

@@ -39,12 +39,12 @@ function sameLook(a: SphereLook, b: SphereLook): boolean {
   return true;
 }
 
-/** Phase-1 tweak panel. Every value maps 1:1 onto SphereLook. */
+/** Tweak panel of the /sphere review page. Every value maps 1:1 onto SphereLook (all live). */
 export default function DebugPanel({ tier, initialLook, onLook, onTier }: DebugPanelProps) {
   const latest = useRef<SphereLook>(initialLook);
   const lastTier = useRef<Tier>(tier);
   const fps = useSphereStore((s) => s.fps);
-  const fragments = useSphereStore((s) => s.fragments);
+  const filaments = useSphereStore((s) => s.filaments);
   const D = initialLook;
 
   const [values, set] = useControls(
@@ -53,58 +53,24 @@ export default function DebugPanel({ tier, initialLook, onLook, onTier }: DebugP
         {
           tier: { value: tier, options: ["high", "medium", "low"] as Tier[], label: "tier" },
           fps: { value: 0, disabled: true, label: "fps" },
-          fragments: { value: 0, disabled: true, label: "fragments" },
+          filaments: { value: 0, disabled: true, label: "filament pts" },
         },
         { collapsed: false },
       ),
-      Shells: folder(
+      Hologram: folder(
         {
-          shells: { value: D.shells, min: 1, max: 8, step: 1, label: "shell count ⟳" },
-          density: { value: D.density, min: 0.2, max: 2, step: 0.05, label: "density ⟳" },
-          arcLength: { value: D.arcLength, min: 0.1, max: 1.2, step: 0.01, label: "arc length ⟳" },
-          ragged: { value: D.ragged, min: 0, max: 2, step: 0.05, label: "ragged ⟳" },
-          windows: { value: D.windows, min: 0, max: 1.5, step: 0.05, label: "windows ⟳" },
-          cuts: { value: D.cuts, min: 0, max: 2, step: 0.05, label: "cuts ⟳" },
-          seed: { value: D.seed, min: 1, max: 99, step: 1, label: "seed ⟳" },
-          fragmentWidth: { value: D.fragmentWidth, min: 0.3, max: 3, step: 0.05, label: "width" },
-          drift: { value: D.drift, min: 0, max: 3, step: 0.05, label: "drift" },
-          innerBrightness: { value: D.innerBrightness, min: 0, max: 3, step: 0.05, label: "inner bright" },
-          outerBrightness: { value: D.outerBrightness, min: 0, max: 3, step: 0.05, label: "outer bright" },
-          depthFade: { value: D.depthFade, min: 0, max: 1, step: 0.01, label: "far-side fade" },
-          limb: { value: D.limb, min: 0, max: 3, step: 0.05, label: "limb glow" },
+          gain: { value: D.gain, min: 0, max: 2.5, step: 0.01, label: "brightness" },
+          halo: { value: D.halo, min: 0, max: 4, step: 0.05, label: "halo" },
+          nodes: { value: D.nodes, min: 0, max: 3, step: 0.05, label: "network nodes" },
         },
         { collapsed: false },
       ),
       Motion: folder(
         {
-          rotationSpeed: { value: D.rotationSpeed, min: 0, max: 5, step: 0.05, label: "rotation" },
-          flickerSpeed: { value: D.flickerSpeed, min: 0, max: 8, step: 0.05, label: "flicker speed" },
-          flickerAmount: { value: D.flickerAmount, min: 0, max: 1, step: 0.01, label: "flicker amount" },
-          breatheAmount: { value: D.breatheAmount, min: 0, max: 0.15, step: 0.001, label: "breathe amt" },
+          sway: { value: D.sway, min: 0, max: 2, step: 0.05, label: "idle sway" },
+          breatheAmount: { value: D.breatheAmount, min: 0, max: 0.05, step: 0.001, label: "breathe amt" },
           breatheSpeed: { value: D.breatheSpeed, min: 0, max: 1.5, step: 0.01, label: "breathe speed" },
-          tilt: { value: D.tilt, min: 0, max: 3, step: 0.05, label: "cursor tilt" },
-        },
-        { collapsed: true },
-      ),
-      Vortex: folder(
-        {
-          ribbonDensity: { value: D.ribbonDensity, min: 0, max: 3, step: 0.05, label: "ribbons ⟳" },
-          swirlSpeed: { value: D.swirlSpeed, min: 0, max: 3, step: 0.01, label: "swirl speed" },
-          vortexRadius: { value: D.vortexRadius, min: 0.05, max: 1, step: 0.01, label: "radius" },
-          vortexBrightness: { value: D.vortexBrightness, min: 0, max: 4, step: 0.05, label: "brightness" },
-          vortexWidth: { value: D.vortexWidth, min: 0.2, max: 3, step: 0.05, label: "ribbon width" },
-          coreSize: { value: D.coreSize, min: 0.01, max: 0.3, step: 0.005, label: "core size" },
-          coreBrightness: { value: D.coreBrightness, min: 0, max: 4, step: 0.05, label: "core bright" },
-          haloStrength: { value: D.haloStrength, min: 0, max: 1.5, step: 0.01, label: "halo" },
-        },
-        { collapsed: true },
-      ),
-      Particles: folder(
-        {
-          particleDensity: { value: D.particleDensity, min: 0, max: 3, step: 0.05, label: "count ⟳" },
-          particleSize: { value: D.particleSize, min: 0.2, max: 4, step: 0.05, label: "size" },
-          particleSpeed: { value: D.particleSpeed, min: 0, max: 4, step: 0.05, label: "speed" },
-          particleBrightness: { value: D.particleBrightness, min: 0, max: 3, step: 0.05, label: "brightness" },
+          tilt: { value: D.tilt, min: 0, max: 3, step: 0.05, label: "cursor lean" },
         },
         { collapsed: true },
       ),
@@ -113,7 +79,6 @@ export default function DebugPanel({ tier, initialLook, onLook, onTier }: DebugP
           colorBase: { value: D.colorBase, label: "base" },
           colorHot: { value: D.colorHot, label: "hot" },
           colorDeep: { value: D.colorDeep, label: "deep" },
-          intensity: { value: D.intensity, min: 0.2, max: 4, step: 0.05, label: "intensity" },
         },
         { collapsed: true },
       ),
@@ -139,8 +104,8 @@ export default function DebugPanel({ tier, initialLook, onLook, onTier }: DebugP
 
   // telemetry rows follow the store; the runtime tier (performance fallback) is pushed into the panel
   useEffect(() => {
-    set({ fps, fragments });
-  }, [set, fps, fragments]);
+    set({ fps, filaments });
+  }, [set, fps, filaments]);
   useEffect(() => {
     if (lastTier.current !== tier) {
       lastTier.current = tier;
@@ -166,5 +131,5 @@ export default function DebugPanel({ tier, initialLook, onLook, onTier }: DebugP
   }, [values, initialLook, onLook, onTier]);
 
   const small = typeof window !== "undefined" && window.innerWidth < 768;
-  return <Leva theme={THEME} titleBar={{ title: "SPHERE // TWEAKS", filter: false, drag: true, position: { x: 0, y: 0 } }} collapsed={small} />;
+  return <Leva theme={THEME} titleBar={{ title: "HOLOGRAM // TWEAKS", filter: false, drag: true, position: { x: 0, y: 0 } }} collapsed={small} />;
 }

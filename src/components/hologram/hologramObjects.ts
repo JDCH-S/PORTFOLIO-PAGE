@@ -1,0 +1,715 @@
+import * as THREE from "three";
+import type { BuildOutput, FaceMeta, FaceWorld } from "./builder";
+import { HOLO_PALETTE } from "./config";
+
+/**
+ * The THREE layer of the face hologram (ported from face-lab proto-a/hologram.js): wraps the builder's packed arrays
+ * in four objects (filaments, particles, orbitals + marks, halo: 4 draw calls) and drives them from update(state).
+ *
+ * Site changes against the prototype: every width / size that the shaders add in view space is multiplied by the
+ * model-view scale (objS), so the head can be parked small by scaling the rig (the prototype only ever zoomed the
+ * camera); the tangent is normalised before the edge-on test for the same reason; dispose() frees the GPU objects
+ * (tier rebuilds, unmount).
+ */
+export interface HoloFrameState {
+  time: number;
+  dt: number;
+  assemble: number;
+  ignite: number;
+  converge: number;
+  pulse: number;
+  /** object-space units per CSS pixel on the head's plane (LOD) */
+  pxWorld: number;
+  /** view-space units per CSS pixel at view distance 1 */
+  pxWorldPerDist: number;
+  /** render DPR of the canvas */
+  dpr: number;
+  /** render px per display px (> 1 when the canvas supersamples a low-DPR display): every px-sized footprint scales by it */
+  ss: number;
+  /** the rig's pose (drag + sway + tilt), radians: the orbitals counter-rotate against it */
+  yaw: number;
+  pitch: number;
+  camera: THREE.Camera;
+}
+
+/** Live look values (debug panel): brightness gain, halo, network nodes, palette. */
+export interface HoloTune {
+  gain: number;
+  halo: number;
+  nodes: number;
+  colorBase: string;
+  colorHot: string;
+  colorDeep: string;
+}
+
+/** the builder's counts plus what the GPU gets */
+export type HologramCounts = BuildOutput["info"]["counts"] & {
+  scanStep: number;
+  devPerCrop: number;
+  /** record texture + index buffer */
+  gpuBytes: number;
+  /** what three submits per frame (the harness's count) */
+  vertices: number;
+  drawCalls: number;
+};
+
+export interface HologramObjects {
+  group: THREE.Group;
+  update: (state: HoloFrameState) => void;
+  tune: (t: Partial<HoloTune>) => void;
+  dispose: () => void;
+  counts: HologramCounts;
+}
+
+type Params = Record<string, string | undefined>;
+
+export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: FaceMeta, params: Params = {}): HologramObjects {
+  const P = params;
+  const dbg = (k: string, d: number): number => (P[k] !== undefined && P[k] !== "" && Number.isFinite(+(P[k] as string)) ? +(P[k] as string) : d);
+  const group = new THREE.Group();
+  group.name = "face-hologram";
+  const S = world.scale;
+  const info = out.info;
+  const PALETTE = HOLO_PALETTE;
+  const colors = {
+    uBase: { value: new THREE.Color(PALETTE.base) },
+    uHot: { value: new THREE.Color(PALETTE.hot) },
+    uDeep: { value: new THREE.Color(PALETTE.deep) },
+  };
+  const additive = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, toneMapped: false };
+  const common = {
+    uTime: { value: 0 }, uAssemble: { value: 1 }, uIgnite: { value: 1 }, uConverge: { value: 1 }, uPulse: { value: 0 },
+    uPxWorldPerDist: { value: 0.001 }, uDpr: { value: 1 }, uCamObj: { value: new THREE.Vector3(0, 0, 4) },
+    uSweepY: { value: 2 }, uZ0: { value: -world.cz * S }, uRimW: { value: dbg('rimw', 0.035) }, uSS: { value: 1 },
+  };
+  const GLSL_VIS = /* glsl */ `
+    uniform vec3 uCamObj;
+    uniform float uZ0, uRimW;
+    float sq(float x) { return x * x; } // never pow(x, 2.0): undefined (NaN) for x < 0
+    // horizon visibility: h = (toward +x, toward -x, toward up, toward down) elevation angles of the relief
+    float horizonVis(vec3 p, vec4 h) {
+      // (finishing pass) view DIRECTION (camera treated as distant): the data is a perspective-compensated front view,
+      // so front-on every surface point the photo shows must be visible; the per-point ray (uCamObj - p) tilted ~9 deg
+      // for the neck and the chin occluded it (the black band under the jaw)
+      vec3 v = uCamObj;
+      float ex = v.x >= 0.0 ? atan(v.z, v.x) - h.x : atan(v.z, -v.x) - h.y;
+      float ey = v.y >= 0.0 ? atan(v.z, v.y) - h.z : atan(v.z, -v.y) - h.w;
+      return smoothstep(-0.02, 0.22, ex) * smoothstep(-0.02, 0.22, ey);
+    }
+    // turned views: the half-shell's back rim (near the z = 0 silhouette plane) tapers out smoothly (ears exempt)
+    float rimTaper(vec3 p, float ear) {
+      float side = smoothstep(0.03, 0.3, 1.0 - normalize(uCamObj).z);
+      // (finishing pass) the back-of-head shell now continues the surface behind z = 0, so the rim only tapers in the
+      // last few px instead of over 0.13 world units (that left a black gap between the ear and the back of the head)
+      float r = smoothstep(uZ0 - 0.005, uZ0 + uRimW, p.z);
+      return mix(1.0, mix(mix(0.35, 1.0, r), 1.0, ear), side);
+    }`;
+
+  // ------------------------------------------------------------------ filaments: vertex pulling from packed records
+  const F = out.fil;
+  const recTex = new THREE.DataTexture(F.rec, F.texW, F.texH, THREE.RGBAIntegerFormat, THREE.UnsignedIntType);
+  recTex.internalFormat = 'RGBA32UI';
+  recTex.magFilter = recTex.minFilter = THREE.NearestFilter;
+  recTex.generateMipmaps = false;
+  recTex.needsUpdate = true;
+  const filGeo = new THREE.BufferGeometry();
+  // 2-byte stub per vertex: three wants a position attribute to count vertices; the shader reads gl_VertexID instead
+  filGeo.setAttribute('position', new THREE.BufferAttribute(new Uint8Array(F.count * 2), 1));
+  filGeo.setIndex(new THREE.BufferAttribute(F.index, 1));
+  filGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.2);
+
+  const filMat = new THREE.ShaderMaterial({
+    ...additive,
+    side: THREE.DoubleSide,
+    uniforms: {
+      ...colors, ...common,
+      uGain: { value: dbg('gain', 1.0) }, uScanW: { value: info.scanWorld }, uMerW: { value: info.merWorld }, uCropW: { value: info.cropWorld },
+      uLod: { value: 0 }, uMerLod: { value: 0 }, uRec: { value: recTex }, uRecW: { value: F.texW }, uFeatPx: { value: dbg('featpx', 0.55) }, uVisOff: { value: dbg('visoff', 0) }, uEdgeOn: { value: new THREE.Vector2(dbg('eon0', 0.08), dbg('eon1', 0.35)) }, uCap: { value: dbg('cap', 0.8) }, uMeshFloor: { value: dbg('meshfloor', 0.75) }, uSmall: { value: 0 }, uCrowd: { value: dbg('crowd', 0.7) }, uMinHalf: { value: 0.55 }, uBand: { value: new THREE.Vector2(1.8, 2.8) }, dbgBL: { value: new THREE.Vector2(dbg('blmin', 0.9), dbg('blk', 1.0)) },
+    },
+    vertexShader: /* glsl */ `
+      uniform highp usampler2D uRec;
+      uniform int uRecW;
+      uniform float uTime, uAssemble, uIgnite, uPulse, uPxWorldPerDist, uDpr, uSweepY, uGain, uScanW, uMerW, uCropW;
+      uniform float uLod, uMerLod, uFeatPx, uCap, uVisOff, uMeshFloor, uSmall, uCrowd, uMinHalf, uSS;
+      uniform vec2 uEdgeOn, uBand;
+      uniform vec2 dbgBL;
+      ${GLSL_VIS}
+      varying float vSide, vI, vU, vM, vSeed, vComp, vKind, vFront;
+      float lo16s(uint w) { return max(float(int(w << 16u) >> 16) / 32767.0, -1.0); }
+      float hi16s(uint w) { return max(float(int(w) >> 16) / 32767.0, -1.0); }
+      float lo16u(uint w) { return float(w & 65535u) / 65535.0; }
+      float hi16u(uint w) { return float(w >> 16u) / 65535.0; }
+      float s8(uint w, uint sh) { return max(float(int(w << (24u - sh)) >> 24) / 127.0, -1.0); }
+      float u8(uint w, uint sh) { return float((w >> sh) & 255u); }
+      void main() {
+        // vertex pulling: vertex 2i / 2i+1 = the two sides of point i, its 32-byte record = texels 2i, 2i+1
+        int pid = gl_VertexID >> 1;
+        float side = (gl_VertexID & 1) == 1 ? 1.0 : -1.0;
+        int tx = (pid * 2) % uRecW, ty = (pid * 2) / uRecW;
+        uvec4 r0 = texelFetch(uRec, ivec2(tx, ty), 0);
+        uvec4 r1 = texelFetch(uRec, ivec2(tx + 1, ty), 0);
+        vec3 p = vec3(lo16s(r0.x), hi16s(r0.x), lo16s(r0.y)) * 1.25;
+        float key = hi16u(r0.y);
+        vec3 tng = vec3(s8(r0.z, 0u), s8(r0.z, 8u), s8(r0.z, 16u));
+        float kind = u8(r0.z, 24u) / 20.0;
+        vec4 hor = vec4(s8(r0.w, 0u), s8(r0.w, 8u), s8(r0.w, 16u), s8(r0.w, 24u)) * 1.6;
+        vec3 gapv = vec3(s8(r1.x, 0u), s8(r1.x, 8u), s8(r1.x, 16u)) * 0.04;
+        float mb = u8(r1.x, 24u);
+        float earF = step(127.5, mb);
+        float mk = (mb - 128.0 * earF) / 127.0;
+        float I0 = lo16u(r1.y) * 4.0;
+        float halfCrop = hi16u(r1.y) * 16.0;
+        float arcU = lo16u(r1.z) * 4096.0;
+        float seed = hi16u(r1.z);
+        float rank = u8(r1.w, 0u);
+        vSide = side; vI = 0.0; vU = arcU; vM = mk; vSeed = seed; vComp = 1.0; vKind = kind; vFront = 0.0;
+
+        float rim = rimTaper(p, earF);
+        float vis = horizonVis(p, hor) * rim;
+        if (kind > 7.5) {
+          // back-of-head shell: the gap slot holds the outward normal; front-facing part only, and only when turned
+          vec3 nrm = normalize(vec3(s8(r1.x, 0u), s8(r1.x, 8u), s8(r1.x, 16u)) + 1e-6);
+          float facing = dot(nrm, normalize(uCamObj - p));
+          vis = smoothstep(0.02, 0.3, facing) * smoothstep(0.1, 0.42, 1.0 - normalize(uCamObj).z);
+          rim = 1.0;
+          if (uVisOff > 1.5) vis = 1.0; // debug ?visoff=2: whole shell
+        }
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        // (site) the rig scales the head to park it small: widths are object-space, the expansion is view-space
+        float objS = length(modelViewMatrix[0].xyz);
+        vec3 t = (modelViewMatrix * vec4(tng, 0.0)).xyz;
+        t = length(t) > 1e-9 ? normalize(t) : vec3(1.0, 0.0, 0.0);
+        vec3 eye = normalize(mv.xyz);
+        vec3 sd = cross(t, eye);
+        float sl = length(sd);
+        sd = sl > 1e-5 ? sd / sl : vec3(1.0, 0.0, 0.0);
+        float edgeOn = smoothstep(uEdgeOn.x, uEdgeOn.y, sl);
+        if (uVisOff > 0.5 && kind < 7.5) vis = rim;
+        float dist = max(-mv.z, 0.05);
+        float half_ = halfCrop * uCropW * objS * mix(0.35, 1.0, smoothstep(0.2, 0.95, mk)) * mix(0.55, 1.0, rim);
+        float wpp = uPxWorldPerDist * dist / uDpr; // world units per device pixel here
+
+        // ---- LOD (decided in JS with hysteresis, crossfaded in time): slices of rank < uLod are dropped only when the
+        // spacing falls below ~1.5 device px (parked / emblem sizes); between ~1.5 and 2.8 px the band-limit below
+        // blends the stack toward continuous tone instead (no thick venetian-blind bars). Meridians likewise with
+        // uMerLod; the diagonal family and the network nodes fade out with the meridian LOD.
+        float lodGain = 1.0;
+        float famMul = 1.0;
+        bool isScan = kind < 0.5;
+        bool isMer = kind > 0.5 && kind < 1.5;
+        if (isScan || isMer) {
+          float Lf = isScan ? uLod : uMerLod;
+          float Li = floor(Lf), fr = Lf - Li;
+          float keep = rank >= Li + 1.0 ? 1.0 : (rank >= Li ? 1.0 - fr : 0.0);
+          float G = isScan ? exp2(Lf) : 1.0; // meridians: dropped ranks simply go (no widened survivors: wide vertical bars)
+          famMul = G;
+          // energy-conserving: a survivor carries the energy of the slices it replaces through its (virtual) width;
+          // the drawn width / vComp below turn that into width first, brightness never rises (no hot forehead)
+          half_ *= G;
+          lodGain = keep * (isMer ? 1.0 - smoothstep(0.0, 1.0, uMerLod) : 1.0); // meridians: no mesh at parked sizes
+        } else if (kind > 6.5) {
+          lodGain = 1.0 - smoothstep(0.0, 1.0, uMerLod);
+        }
+        // ---- band-limit from the PROJECTED local spacing (per vertex): where slices crowd below ~2.8 device px
+        // (bunched under the nose / jaw, cheeks turning away at pitch) the line widens toward the spacing with energy
+        // compensation, so the stack blends to tone there instead of beating against the pixel grid (moire)
+        float spPx = 0.0;
+        if (isScan) {
+          vec3 g = (modelViewMatrix * vec4(gapv, 0.0)).xyz;
+          vec2 t2 = length(t.xy) > 1e-6 ? normalize(t.xy) : vec2(1.0, 0.0);
+          vec2 gp = g.xy - dot(g.xy, t2) * t2;
+          spPx = length(gp) * famMul / wpp;
+          if (length(gapv) < 1e-5) spPx = uScanW * objS * famMul / wpp;
+        } else if (isMer) {
+          spPx = uMerW * objS * exp2(floor(uMerLod)) / wpp;
+        }
+        // turned views: where the surface turns away (forehead and nose profile at the yaw limit) the slices crowd on
+        // screen and their additive sum burns to a white-hot rim; beyond uCrowd of the built spacing the extra density
+        // is taken out of the brightness (front-on the projected spacing is the built one, so nothing changes there)
+        // Two compressions: across the lines (scan slices crowding) and along them (a line running toward the eye: its
+        // light per screen px grows as 1 / sin(angle)); both measured against the front view
+        float crowd = 1.0;
+        // (the spacing across a line is only measurable while the line runs across the screen: on a nose flank it runs
+        // toward the eye, its screen tangent is degenerate and the measured spacing meaningless)
+        if (isScan && length(gapv) >= 1e-5) crowd = mix(1.0, clamp(spPx / max(1e-4, uScanW * objS * famMul / wpp * uCrowd), 0.0, 1.0), smoothstep(0.5, 0.8, length(t.xy)));
+        // (only on surfaces that face the camera front-on, e.g. the forehead turning edge-on: lines on steep flanks, like
+        // the nose's, already run toward the eye front-on and a small sway would otherwise darken one flank)
+        if (kind < 7.5) {
+          vec3 tn0 = normalize(tng + vec3(1e-6));
+          float slFront = length(tn0.xy);
+          float tc = clamp(sl / max(1e-3, slFront * uCrowd), 0.0, 1.0);
+          crowd = min(crowd, mix(1.0, tc, smoothstep(0.55, 0.85, slFront)));
+        }
+        float blend = spPx > 0.0 ? 1.0 - smoothstep(uBand.x, uBand.y, spPx) : 0.0;
+        // identity feature lines (lids, iris, catchlight, lips) keep a fixed minimum device-px width; at hero size they
+        // dim linearly like everything else (tone unchanged), only when the head is parked small do they keep more of
+        // their brightness (floor 0.5 * sqrt), so the eyes still read at 120 px
+        bool feat = kind > 4.5 && kind < 5.95;
+        float minHalfPx = feat ? uFeatPx * uSS : max(uMinHalf, blend * max(dbgBL.x * uSS, dbgBL.y * spPx));
+        float drawn = max(half_, minHalfPx * wpp);
+        // LOD survivors: the virtual width is capped at the survivor spacing (energy beyond it is folded into a little
+        // brightness, max 1.6x); at full resolution a line is never brighter than its own tone (vComp <= 1)
+        // (finishing pass) ranks are only dropped below ~0.45 device px (emblem sizes, to bound overdraw); every survivor
+        // then still overlaps its neighbours (min half 0.55 px = ~1.2 px effective width), so parked heads read as
+        // continuous tone instead of thick venetian-blind bars
+        if (famMul > 1.0 && spPx > 0.0) drawn = min(drawn, max(1.0 * spPx * wpp, minHalfPx * wpp));
+        // emblem sizes (uSmall -> 1): no brightness floor on the feature lines and no LOD brightness boost, so no single
+        // hot pixel on the catchlights / nose at 40 px
+        vComp = feat ? max(half_ / drawn, (1.0 - uSmall) * 0.5 * sqrt(half_ / drawn)) : min(half_ / drawn, famMul > 1.0 ? mix(1.6, 1.0, uSmall) : 1.0);
+        // (finishing pass) the wireframe families (meridians, diagonals) keep most of their brightness at DPR 1 / 1.25,
+        // where their true width is below the 1.1 px minimum: otherwise the mesh only shows at DPR 2 and the skin reads
+        // as a plain horizontal hatch
+        if (isMer || kind > 6.5) vComp = max(vComp, uMeshFloor);
+        mv.xyz += sd * side * drawn * 1.6;
+        gl_Position = projectionMatrix * mv;
+
+        // intro: a scan plane descends and draws the filaments behind it
+        float a = uAssemble * 1.12 - 0.04;
+        float built = smoothstep(key - 0.004, key + 0.012, a);
+        vFront = exp(-sq((key - a) / 0.018)) * step(0.001, uAssemble) * step(uAssemble, 0.999);
+        float sw = exp(-sq((p.y - uSweepY) / 0.022)) + 0.35 * exp(-sq((p.y - uSweepY - 0.05) / 0.06));
+        float rip = exp(-sq((length(p.xy - vec2(0.0, 0.05)) - (1.0 - uPulse) * 1.25) / 0.08)) * uPulse;
+        float flick = 0.94 + 0.06 * sin(uTime * (1.3 + seed * 2.0) + seed * 60.0);
+        float ign = mix(0.25, 1.0, uIgnite) + 0.6 * uIgnite * (1.0 - uIgnite) * 4.0 * step(uAssemble, 0.999);
+        float base = I0 * vis * edgeOn * flick * built * ign * uGain * lodGain;
+        // sweep, pulse ripple and the intro front are tone-weighted and capped: they light up the darker filaments
+        // and never push an already bright one (forehead, nose) past uCap, so nothing burns out
+        float room = 1.0 - smoothstep(0.25, 0.75, I0);
+        float boost = (1.6 * sw + 0.4 * uPulse + 0.75 * rip) * mix(0.3, 1.0, room); // pulse more visible, still capped by uCap
+        float full = base * (1.0 + boost) + 0.4 * vFront * I0 * vis * edgeOn * uGain * lodGain;
+        vI = min(full, max(base, uCap));
+        vI = min(vI, mix(4.0, 0.55, uSmall)); // per-filament peak clamp when parked tiny
+        // a whole feature ring (catchlight, iris) collapses into one or two pixels when parked tiny and its segments add
+        // up there (a hot pixel on the eye / nose at 76 px): the feature lines give up half their light at emblem sizes
+        if (feat) vI *= 1.0 - 0.5 * uSmall;
+        vI *= crowd;
+        if (lodGain < 0.002) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uBase, uHot, uDeep;
+      uniform float uTime;
+      varying float vSide, vI, vU, vM, vSeed, vComp, vKind, vFront;
+      float sq(float x) { return x * x; }
+      // integer hash (PCG output permutation) of a dash cell and a filament seed, 0..1: a float sin() hash of
+      // arguments up to ~2e4 is range-reduced coarsely on mobile GPUs (patterned dash keep/drop in the neck dissolve)
+      float hash(int cell, uint seed, uint salt) {
+        uint h = uint(cell) * 747796405u + seed * 2891336453u + salt;
+        h = ((h >> ((h >> 28u) + 4u)) ^ h) * 277803737u;
+        h = (h >> 22u) ^ h;
+        return float(h) * (1.0 / 4294967295.0);
+      }
+      void main() {
+        float edge = 1.0 - smoothstep(0.3, 1.0, abs(vSide));
+        float run = pow(0.5 + 0.5 * sin(vU * 0.03 - uTime * 0.9 + vSeed * 40.0), 6.0);
+        float i = vI * (0.96 + 0.1 * run);
+        // the neck dissolves: filaments break into shorter and shorter dashes, then soft dots, where the mask fades
+        if (vM < 0.98) {
+          float q = vU * 0.45 + vSeed * 17.0;
+          float cell = floor(q), cf = fract(q);
+          float pk = pow(vM, 1.5);
+          int ic = int(cell);
+          uint sd = uint(vSeed * 65535.0);
+          float h = hash(ic, sd, 0u);
+          float hp = hash(ic - 1, sd, 0u);
+          float hn = hash(ic + 1, sd, 0u);
+          float h2 = hash(ic, sd, 0x9e3779b9u);
+          float keep = step(h, pk);
+          float dash = 1.0 - (1.0 - step(hn, pk)) * smoothstep(0.55, 1.0, cf) - (1.0 - step(hp, pk)) * smoothstep(0.45, 0.0, cf);
+          float dotc = 0.25 + 0.5 * h2;
+          float dotv = exp(-sq((cf - dotc) / mix(0.08, 0.3, vM)));
+          i *= keep * mix(dotv, max(dash, 0.0), smoothstep(0.55, 0.92, vM)) * mix(0.5, 1.0, vM);
+        }
+        float lum = clamp(i, 0.0, 2.0);
+        float strandK = max(step(1.5, vKind) * step(vKind, 3.95), step(7.5, vKind));
+        vec3 lowCol = mix(mix(uDeep, uBase, 0.6), mix(uDeep, uBase, 0.55), strandK);
+        vec3 col = mix(lowCol, uBase, smoothstep(0.02, 0.3, lum) * (1.0 - 0.6 * strandK));
+        float deepK = vKind > 1.5 ? clamp((fract(vKind + 0.001) - 0.2) * 1.25, 0.0, 1.0) : 0.0;
+        col = mix(col, mix(uDeep, uBase, 0.4), deepK * (1.0 - smoothstep(0.25, 0.7, lum)));
+        // the network family (diagonals) leans a touch more amber than the scan so it reads as its own filaments
+        col = mix(col, mix(uDeep, uBase, 0.55), step(6.5, vKind) * step(vKind, 7.5) * 0.5);
+        col = mix(col, uHot, clamp(smoothstep(0.8, 1.5, lum) + 0.12 * vFront, 0.0, 1.0));
+        gl_FragColor = vec4(col * lum * edge * vComp, 1.0);
+      }`,
+  });
+  const filaments = new THREE.Mesh(filGeo, filMat);
+  filaments.name = 'filaments';
+  filaments.frustumCulled = false;
+  group.add(filaments);
+
+  // ------------------------------------------------------------------ particles: dust, neck dissolve, network nodes
+  const PT = out.pts;
+  const ptGeo = new THREE.BufferGeometry();
+  ptGeo.setAttribute('position', new THREE.BufferAttribute(PT.pos, 3));
+  ptGeo.setAttribute('aInfo', new THREE.BufferAttribute(PT.info, 4));
+  ptGeo.setAttribute('aHor', new THREE.BufferAttribute(PT.hor, 4));
+  ptGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3);
+  const ptMat = new THREE.ShaderMaterial({
+    ...additive,
+    uniforms: { ...colors, ...common, uMerLod: filMat.uniforms.uMerLod, uNode: { value: dbg('gnode', 1.0) } },
+    vertexShader: /* glsl */ `
+      attribute vec4 aInfo;
+      attribute vec4 aHor;
+      uniform float uTime, uConverge, uAssemble, uIgnite, uPxWorldPerDist, uDpr, uPulse, uMerLod, uNode, uSS;
+      ${GLSL_VIS}
+      varying float vA, vHot;
+      void main() {
+        float kind = aInfo.x;
+        vec3 p = position;
+        float a = 0.0;
+        float size = 0.004;
+        vHot = 0.0;
+        if (kind < 0.5) {
+          float ang = uTime * (0.025 + 0.04 * aInfo.y) * (aInfo.z > 0.5 ? 1.0 : -1.0);
+          float c = cos(ang), s = sin(ang);
+          p = vec3(c * p.x + s * p.z, p.y + 0.025 * sin(uTime * 0.3 + aInfo.y * 31.0), -s * p.x + c * p.z);
+          p *= mix(2.3 + aInfo.z, 1.0, smoothstep(0.0, 1.0, uConverge));
+          size = 0.0035 + 0.006 * aInfo.y * aInfo.y;
+          a = aInfo.w * (0.25 + 0.75 * pow(0.5 + 0.5 * sin(uTime * (0.5 + aInfo.z) + aInfo.y * 50.0), 3.0)) * 0.55;
+          a *= smoothstep(0.0, 0.3, uConverge);
+          float inFace = (1.0 - smoothstep(0.75, 1.05, length(vec2(p.x / 0.5, (p.y - 0.06) / 0.78)))) * step(0.0, p.z);
+          a *= 1.0 - 0.8 * inFace;
+        } else if (kind < 1.5) {
+          float ph = fract(uTime * (0.05 + 0.06 * aInfo.y) + aInfo.z);
+          p.y -= ph * (0.035 + 0.045 * aInfo.z);
+          p.x += 0.012 * sin(uTime * 0.7 + aInfo.y * 20.0) * ph;
+          vec3 from = position * (2.0 + aInfo.y);
+          p = mix(from, p, smoothstep(0.0, 1.0, uConverge));
+          size = 0.003 + 0.0045 * aInfo.z;
+          a = aInfo.w * sin(3.14159 * ph) * 0.9 * horizonVis(position, aHor) * smoothstep(0.2, 0.8, uConverge);
+        } else if (kind < 2.75) {
+          // network nodes at real filament crossings: a steady faint node, hubs a little brighter, rare short flashes
+          float hub = step(2.25, kind);
+          float tw = pow(max(0.0, sin(uTime * (0.35 + 0.5 * aInfo.y) + aInfo.z * 80.0)), 40.0);
+          size = mix(0.0042, 0.0062, hub);
+          a = aInfo.w * (mix(0.16, 0.42, hub) + 1.3 * tw) * horizonVis(position, aHor) * rimTaper(position, 0.0);
+          a *= smoothstep(0.7, 1.0, uAssemble) * uNode * (1.0 - smoothstep(0.0, 1.0, uMerLod));
+          vHot = tw;
+        }
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        float px = size * length(modelViewMatrix[0].xyz) / (uPxWorldPerDist * max(-mv.z, 0.05)) * uDpr;
+        float drawn = max(px, 1.6 * uSS);
+        vA = a * (px * px) / (drawn * drawn) * (0.4 + 0.6 * uIgnite) * (1.0 + 0.5 * uPulse);
+        if (kind > 8.5) vA = 0.0;
+        gl_PointSize = drawn;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uBase, uHot;
+      varying float vA, vHot;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        float a = 1.0 - smoothstep(0.0, 1.0, d);
+        a *= a;
+        gl_FragColor = vec4(mix(uBase, uHot, clamp(a * 0.6 + vHot, 0.0, 1.0)) * vA * a, 1.0);
+      }`,
+  });
+  const particles = new THREE.Points(ptGeo, ptMat);
+  particles.name = 'particles';
+  particles.frustumCulled = false;
+  group.add(particles);
+
+  // ------------------------------------------------------------------ orbitals + scan line + biometric marks (one mesh)
+  // kinds: 0 ring (rotated by uRot[id]), 1 ring tick, 2 scan line (follows uMarkY), 3 static mark
+  const mp: number[] = [], mt: number[] = [], mi: number[] = [], mj: number[] = [];
+  const mIdx: number[] = [];
+  let mv0 = 0;
+  function mLine(points: number[][], tangents: number[][], kind: number, id: number, I: number, half: number) {
+    const n = points.length;
+    let L = 0;
+    for (let i = 0; i < n; i++) {
+      if (i) L += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1], points[i][2] - points[i - 1][2]);
+      for (let k = 0; k < 2; k++) {
+        mp.push(...points[i]);
+        mt.push(...tangents[i]);
+        mi.push(k ? 1 : -1, kind, id, L);
+        mj.push(I, half, i / (n - 1), 0);
+      }
+      if (i) { const a = mv0 + (i - 1) * 2, b = mv0 + i * 2; mIdx.push(a, a + 1, b, a + 1, b + 1, b); }
+    }
+    mv0 += n * 2;
+  }
+  interface Ring { r: number; tilt?: number; roll?: number; prec: number; ph: number; arc: number; I: number; swing?: number; face?: boolean }
+  const rings: Ring[] = [
+    { r: 0.965, tilt: 1.31, roll: 0.1, prec: 0.035, ph: 0.3, arc: 1.0, I: 0.32 },
+    { r: 0.9, tilt: -1.42, roll: 0.0, prec: -0.026, ph: 2.0, arc: 1.0, I: 0.2, swing: 0.2 },
+    { r: 0.99, face: true, prec: 0.05, ph: 4.1, arc: 0.42, I: 0.26 }, // outermost: clearly its own arc, not a second copy of ring 1
+  ];
+  rings.forEach((R, id) => {
+    const NR = 220;
+    const pts: number[][] = [], tg: number[][] = [];
+    for (let i = 0; i <= NR; i++) {
+      const a = (i / NR) * Math.PI * 2 * R.arc;
+      if (R.face) { pts.push([R.r * Math.cos(a), R.r * Math.sin(a), 0]); tg.push([-Math.sin(a), Math.cos(a), 0]); }
+      else { pts.push([R.r * Math.cos(a), 0, R.r * Math.sin(a)]); tg.push([-Math.sin(a), 0, Math.cos(a)]); }
+    }
+    mLine(pts, tg, 0, id, R.I, 0.0011);
+    const nt = id === 0 ? 72 : id === 2 ? 24 : 0;
+    for (let i = 0; i < nt; i++) {
+      const a = (i / nt) * Math.PI * 2 * R.arc;
+      const major = i % 6 === 0;
+      const l = major ? 0.028 : 0.012;
+      const c = Math.cos(a), s = Math.sin(a);
+      if (R.face) mLine([[(R.r - l * 0.3) * c, (R.r - l * 0.3) * s, 0], [(R.r + l) * c, (R.r + l) * s, 0]], [[c, s, 0], [c, s, 0]], 1, id, major ? 0.5 : 0.3, 0.0012);
+      else mLine([[(R.r - l * 0.3) * c, 0, (R.r - l * 0.3) * s], [(R.r + l) * c, 0, (R.r + l) * s]], [[c, 0, s], [c, 0, s]], 1, id, major ? 0.5 : 0.3, 0.0012);
+    }
+  });
+  {
+    const pts: number[][] = [], tg: number[][] = [];
+    for (let i = 0; i <= 64; i++) { const x = -0.9 + 1.8 * (i / 64); pts.push([x, 0, 0.05]); tg.push([1, 0, 0]); }
+    mLine(pts, tg, 2, 0, 0.12, 0.0009);
+    for (const sx of [-1, 1]) mLine([[sx * 0.9, -0.025, 0.05], [sx * 0.9, 0.025, 0.05]], [[0, 1, 0], [0, 1, 0]], 2, 1, 0.45, 0.0012);
+  }
+  for (const { p: P0, sx, sy } of out.frame) {
+    const Ph = [P0[0] + sx * 0.06, P0[1], P0[2]];
+    const Pv = [P0[0], P0[1] - sy * 0.06, P0[2]];
+    mLine([Ph, P0], [[1, 0, 0], [1, 0, 0]], 3, 0, 0.11, 0.0009);
+    mLine([P0, Pv], [[0, 1, 0], [0, 1, 0]], 3, 0, 0.11, 0.0009);
+  }
+  const mkGeo = new THREE.BufferGeometry();
+  mkGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(mp), 3));
+  mkGeo.setAttribute('aTan', new THREE.BufferAttribute(new Float32Array(mt), 3));
+  mkGeo.setAttribute('aInfo', new THREE.BufferAttribute(new Float32Array(mi), 4));
+  mkGeo.setAttribute('aInfo2', new THREE.BufferAttribute(new Float32Array(mj), 4));
+  mkGeo.setIndex(new THREE.BufferAttribute(new Uint16Array(mIdx), 1));
+  mkGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.2);
+  const rotU = rings.map(() => new THREE.Matrix3());
+  const mkMat = new THREE.ShaderMaterial({
+    ...additive,
+    side: THREE.DoubleSide,
+    uniforms: { ...colors, ...common, uRot: { value: rotU }, uScanA: { value: 0 }, uMarkY: { value: 5 }, uFaceAx: { value: new THREE.Vector2(0.6, 0.92) } },
+    vertexShader: /* glsl */ `
+      attribute vec3 aTan;
+      attribute vec4 aInfo;  // side, kind, id, arc length
+      attribute vec4 aInfo2; // intensity, half width, t, -
+      uniform mat3 uRot[3];
+      uniform vec2 uFaceAx;
+      uniform float uTime, uAssemble, uIgnite, uPxWorldPerDist, uDpr, uMarkY, uScanA, uSS;
+      varying float vSide, vI, vT, vComp, vKind, vId;
+      void main() {
+        float kind = aInfo.y;
+        int id = int(aInfo.z + 0.5);
+        vec3 p = position;
+        vec3 t = aTan;
+        float I = aInfo2.x;
+        if (kind < 1.5) {
+          mat3 R = id == 0 ? uRot[0] : (id == 1 ? uRot[1] : uRot[2]);
+          p = R * p;
+          t = R * t;
+          I *= smoothstep(0.0, 0.5, uAssemble);
+        } else if (kind < 2.5) {
+          p.y += uMarkY;
+          I *= uScanA * mix(0.15, 1.0, smoothstep(0.42, 0.62, abs(p.x)));
+        } else {
+          I *= smoothstep(0.6, 1.0, uAssemble);
+        }
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        float objS = length(modelViewMatrix[0].xyz);
+        if (kind < 1.5) {
+          // rings never cross the face: screen-space ellipse around the head (proto-b), front AND back arcs
+          vec4 o = modelViewMatrix * vec4(0.0, 0.05, 0.0, 1.0);
+          vec2 rel = (mv.xy / -mv.z - o.xy / -o.z) * -o.z / objS;
+          float e = length(rel / uFaceAx);
+          I *= smoothstep(0.86, 1.04, e);
+        }
+        vec3 tv = (modelViewMatrix * vec4(t, 0.0)).xyz;
+        vec3 sd = cross(tv, normalize(mv.xyz));
+        float sl = length(sd);
+        sd = sl > 1e-5 ? sd / sl : vec3(0.0, 1.0, 0.0);
+        float dist = max(-mv.z, 0.05);
+        float half_ = aInfo2.y * objS;
+        float minHalf = (0.55 * uSS / uDpr) * uPxWorldPerDist * dist;
+        float drawn = max(half_, minHalf);
+        vComp = half_ / drawn;
+        mv.xyz += sd * aInfo.x * drawn * 1.6;
+        gl_Position = projectionMatrix * mv;
+        vSide = aInfo.x;
+        vI = I * (kind > 1.5 && kind < 2.5 ? 1.0 : uIgnite);
+        vT = aInfo2.z;
+        vKind = kind;
+        vId = aInfo.z;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uBase, uHot, uDeep;
+      uniform float uTime;
+      varying float vSide, vI, vT, vComp, vKind, vId;
+      void main() {
+        float edge = 1.0 - smoothstep(0.3, 1.0, abs(vSide));
+        float i = vI;
+        vec3 col = uBase;
+        if (vKind < 0.5) {
+          float run = pow(0.5 + 0.5 * cos((vT - uTime * (0.03 + 0.01 * vId) - vId * 0.31) * 6.2831853), 60.0);
+          float dash = mix(1.0, 0.35 + 0.65 * step(0.5, fract(vT * 140.0)), step(0.55, fract(vT * 2.0 + vId * 0.2)));
+          i = i * (0.5 * dash + 3.0 * run);
+          col = mix(uDeep * 0.6 + uBase * 0.4, uHot, run);
+        } else if (vKind > 1.5 && vKind < 2.5) {
+          col = mix(uBase, uHot, 0.4);
+        }
+        gl_FragColor = vec4(col * i * edge * vComp, 1.0);
+      }`,
+  });
+  const marks = new THREE.Mesh(mkGeo, mkMat);
+  marks.name = 'orbitals-marks';
+  marks.frustumCulled = false;
+  group.add(marks);
+
+  // ------------------------------------------------------------------ halo behind the head
+  const haloGeo = new THREE.BufferGeometry();
+  haloGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
+  haloGeo.setIndex([0, 1, 2, 0, 2, 3]);
+  haloGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 2);
+  const haloMat = new THREE.ShaderMaterial({
+    ...additive,
+    uniforms: { ...colors, ...common, uHalo: { value: dbg('halo', 1.0) } },
+    vertexShader: /* glsl */ `
+      varying vec2 vP;
+      void main() {
+        vec4 c = modelViewMatrix * vec4(0.0, 0.08, -0.3, 1.0);
+        vP = position.xy;
+        c.xy += position.xy * vec2(1.15, 1.3) * length(modelViewMatrix[0].xyz);
+        gl_Position = projectionMatrix * c;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uBase, uDeep;
+      uniform float uIgnite, uPulse, uTime, uHalo, uAssemble;
+      varying vec2 vP;
+      void main() {
+        float r = length(vP);
+        float g = exp(-r * r * 4.6) * 0.75 + exp(-r * r * 10.0) * 0.25;
+        g *= 1.0 - smoothstep(0.85, 1.0, r);
+        float breathe = 0.92 + 0.08 * sin(uTime * 0.5);
+        vec3 col = mix(uDeep, uBase, 0.35);
+        // the halo only appears once the head is built (no glow ahead of the scan front during the intro)
+        float gate = smoothstep(0.75, 1.0, uAssemble);
+        gl_FragColor = vec4(col * g * 0.05 * uHalo * breathe * (uIgnite * 0.85 + 0.15) * (1.0 + 0.8 * uPulse) * gate, 1.0);
+      }`,
+  });
+  const halo = new THREE.Mesh(haloGeo, haloMat);
+  halo.name = 'halo';
+  halo.frustumCulled = false;
+  halo.renderOrder = -1;
+  group.add(halo);
+
+  if (typeof P.hide === 'string') for (const n of P.hide.split(',')) { const o = group.getObjectByName(n); if (o) o.visible = false; } // debug
+  const counts: HologramCounts = {
+    ...info.counts,
+    scanStep: +info.scanStep.toFixed(3),
+    devPerCrop: +info.devPerCrop.toFixed(3),
+    gpuBytes: info.bytes.texture + info.bytes.index,
+    // what three submits per frame (the harness's count): 2 ribbon sides per filament point, particles, marks, halo
+    vertices: F.count * 2 + PT.count + mp.length / 3 + 4,
+    drawCalls: 4,
+  };
+
+  // ------------------------------------------------------------------ per-frame
+  const mats = [filMat, ptMat, mkMat, haloMat];
+  const camLocal = new THREE.Vector3();
+  const inv = new THREE.Matrix4();
+  const m4 = new THREE.Matrix4();
+  const mc = new THREE.Matrix4();
+  const ex = new THREE.Euler();
+  const exc = new THREE.Euler();
+  const SWEEP_PERIOD = 7.0;
+  const head = meta.head;
+  // LOD state: integer target with hysteresis (drop a rank below LOD_DOWN device px, take it back above LOD_UP),
+  // crossfaded over LOD_FADE seconds. Decided from the camera framing only (the pulse scale is ignored).
+  // (finishing pass) the scan family never drops ranks by default: at parked sizes all slices overlap into continuous
+  // tone (no venetian blinds) and the overdraw of a <= 120 px head is trivial; LOD survivors with energy compensation
+  // made hot pixels at 40 px. ?loddown=1.5 restores the old behaviour.
+  const LOD_DOWN = dbg('loddown', 0.0), LOD_UP = dbg('lodup', 0.15), LOD_FADE = 0.4;
+  const MER_DOWN = 3.2, MER_UP = 3.8;
+  // [at DPR 1, at DPR 2]: minimum line half-width (device px) and the band-limit ramp (projected slice spacing, px)
+  const AA = { minHalf: [dbg('aamin', 0.75), 0.55], band0: [dbg('aab0', 2.2), 1.8], band1: [dbg('aab1', 3.4), 2.8] };
+  const lod = { scan: -1, scanF: 0, mer: -1, merF: 0 };
+  function lodTarget(cur: number, spacing: number, down: number, up: number, max: number) {
+    let L = cur < 0 ? 0 : cur;
+    while (L < max && spacing * 2 ** L < down) L++;
+    while (L > 0 && spacing * 2 ** (L - 1) >= up) L--;
+    return L;
+  }
+  function update(state: HoloFrameState) {
+    const ph = ((state.time + 2.2) % SWEEP_PERIOD) / SWEEP_PERIOD;
+    const sweepT = ph / 0.45;
+    const sweepY = sweepT <= 1 ? 1.0 - 2.05 * sweepT : 5.0;
+    const scanA = sweepT <= 1 ? Math.sin(Math.PI * Math.min(1, sweepT)) ** 0.5 : 0;
+    const ss = Math.max(1, state.ss || 1);
+    const dispDpr = state.dpr / ss;
+    group.updateWorldMatrix(true, false);
+    inv.copy(group.matrixWorld).invert();
+    camLocal.copy(state.camera.position).applyMatrix4(inv);
+    for (const m of mats) {
+      const u = m.uniforms;
+      u.uTime.value = state.time;
+      u.uAssemble.value = state.assemble;
+      u.uIgnite.value = state.ignite;
+      u.uConverge.value = state.converge;
+      u.uPulse.value = state.pulse;
+      u.uPxWorldPerDist.value = state.pxWorldPerDist;
+      u.uDpr.value = state.dpr;
+      u.uSS.value = ss;
+      u.uCamObj.value.copy(camLocal);
+      u.uSweepY.value = state.assemble < 1 ? 5.0 : sweepY;
+    }
+    // intro: the marks' scan line rides the scan front, so the head is visibly scanned into existence
+    if (state.assemble < 1) {
+      const a = state.assemble * 1.12 - 0.04;
+      const yCrop = head.top + (a / 0.86) * (head.bottom - head.top);
+      mkMat.uniforms.uMarkY.value = (world.cy - yCrop) * S;
+      mkMat.uniforms.uScanA.value = state.assemble > 0.001 ? 1.6 * Math.min(1, (1 - state.assemble) * 8) : 0;
+    } else {
+      mkMat.uniforms.uMarkY.value = sweepY;
+      mkMat.uniforms.uScanA.value = scanA;
+    }
+    // LOD (device px spacing at the origin plane, without the pulse scale)
+    const pxw = Math.max(1e-6, state.pxWorld);
+    // (in display px: a supersampled canvas keeps the display's LOD)
+    const scanPx = (info.scanWorld / pxw) * dispDpr, merPx = (info.merWorld / pxw) * dispDpr;
+    lod.scan = lodTarget(lod.scan, scanPx, LOD_DOWN, LOD_UP, 5);
+    lod.mer = lodTarget(lod.mer, merPx, MER_DOWN, MER_UP, 4);
+    if (P.lod !== undefined) lod.scan = +P.lod;
+    const step = state.dt > 0 ? state.dt / LOD_FADE : 1e9;
+    lod.scanF += Math.max(-step, Math.min(step, lod.scan - lod.scanF));
+    lod.merF += Math.max(-step, Math.min(step, lod.mer - lod.merF));
+    filMat.uniforms.uLod.value = lod.scanF;
+    filMat.uniforms.uMerLod.value = lod.merF;
+    filMat.uniforms.uSmall.value = Math.min(1, Math.max(0, (1.0 - scanPx) / 0.6));
+    // anti-aliasing at DPR 1: a ~1.1 px line sampled at pixel centres breaks into staircase dashes, and slices ~2-3 px
+    // apart beat against the pixel grid (moire). A supersampled canvas (high / medium tiers, SphereScene) keeps the
+    // designed footprints in display px and lets the browser's downscale filter them. Without it (low tier, ?holo.ss=0)
+    // every line gets a wider minimum footprint below DPR 2 (energy compensated, so tone is unchanged) and the
+    // band-limit starts blending crowded slices toward tone earlier.
+    const lowDpr = ss > 1.01 ? 0 : Math.min(1, Math.max(0, 2 - dispDpr));
+    filMat.uniforms.uMinHalf.value = (AA.minHalf[1] + (AA.minHalf[0] - AA.minHalf[1]) * lowDpr) * ss;
+    filMat.uniforms.uBand.value.set((AA.band0[1] + (AA.band0[0] - AA.band0[1]) * lowDpr) * ss, (AA.band1[1] + (AA.band1[0] - AA.band1[1]) * lowDpr) * ss);
+    group.userData.lod = lod;
+    // rings: counter-rotated 80 % against the rig (drag / pose), so the orbit system stays put while the head turns
+    exc.set(-(state.pitch || 0) * 0.8, -(state.yaw || 0) * 0.8, 0, 'YXZ');
+    mc.makeRotationFromEuler(exc);
+    const halfW = 0.6 + 0.14 * Math.abs(Math.sin(state.yaw || 0));
+    mkMat.uniforms.uFaceAx.value.set(halfW, 0.92 + 0.06 * Math.abs(Math.sin(state.pitch || 0)));
+    for (let i = 0; i < rings.length; i++) {
+      const R = rings[i];
+      if (R.face) ex.set(0.07 * Math.sin(state.time * 0.07 + R.ph), 0.09 * Math.cos(state.time * 0.05 + R.ph), R.ph + state.time * R.prec, 'XYZ');
+      else ex.set(R.tilt ?? 0, (R.swing ?? 0.6) * Math.sin(R.ph + state.time * R.prec * 1.6), R.roll ?? 0, 'YXZ'); // ring 2: small swing, stays concentric
+      m4.makeRotationFromEuler(ex);
+      m4.premultiply(mc);
+      rotU[i].setFromMatrix4(m4);
+    }
+  }
+
+  function tune(t: Partial<HoloTune>) {
+    if (t.gain !== undefined) filMat.uniforms.uGain.value = dbg('gain', 1.0) * t.gain;
+    if (t.halo !== undefined) haloMat.uniforms.uHalo.value = dbg('halo', 1.0) * t.halo;
+    if (t.nodes !== undefined) ptMat.uniforms.uNode.value = dbg('gnode', 1.0) * t.nodes;
+    if (t.colorBase) colors.uBase.value.set(t.colorBase);
+    if (t.colorHot) colors.uHot.value.set(t.colorHot);
+    if (t.colorDeep) colors.uDeep.value.set(t.colorDeep);
+  }
+
+  function dispose() {
+    for (const o of [filaments, particles, marks, halo]) o.geometry.dispose();
+    for (const m of mats) m.dispose();
+    recTex.dispose();
+  }
+
+  return { group, update, tune, dispose, counts };
+}

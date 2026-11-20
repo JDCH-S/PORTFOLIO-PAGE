@@ -8,11 +8,11 @@ function pad(n: number) {
   return n.toString().padStart(2, "0");
 }
 
-/** Bottom telemetry bar: live fps, tier, fragments, uptime and a drifting coordinate. */
+/** Bottom telemetry bar: live fps, tier, filament points, uptime and a drifting coordinate. */
 export default function Telemetry({ className = "" }: { className?: string }) {
   const fps = useSphereStore((s) => s.fps);
   const tier = useSphereStore((s) => s.tier);
-  const fragments = useSphereStore((s) => s.fragments);
+  const filaments = useSphereStore((s) => s.filaments);
   const phase = useSiteStore((s) => s.phase);
   const [t, setT] = useState(0);
   useEffect(() => {
@@ -30,7 +30,7 @@ export default function Telemetry({ className = "" }: { className?: string }) {
         <span className="text-steel-dim">TIER</span> {tier.toUpperCase()}
       </span>
       <span>
-        <span className="text-steel-dim">FRAG</span> {fragments.toLocaleString()}
+        <span className="text-steel-dim">FIL</span> {filaments.toLocaleString()}
       </span>
       <span>
         <span className="text-steel-dim">T+</span>

@@ -25,8 +25,8 @@ const MODULE: Record<ModuleId, React.ComponentType<{ className?: string; compact
 };
 
 const HINT = {
-  core: "click the sphere or press enter",
-  menu: "pick a section · click the sphere or press esc to close",
+  core: "click the hologram or press enter",
+  menu: "pick a section · click the hologram or press esc to close",
   module: "← → next section · esc all sections",
 } as const;
 
@@ -44,7 +44,7 @@ export default function DesktopLayout() {
   const Active = MODULE[active];
 
   return (
-    <div className="relative z-10 grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] gap-4 p-5 xl:gap-6 xl:p-7">
+    <div className="relative z-10 grid h-dvh grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] gap-4 p-5 xl:gap-6 xl:p-7">
       <Header />
 
       <main id="content" className="grid min-h-0">

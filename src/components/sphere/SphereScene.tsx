@@ -5,11 +5,10 @@ import dynamic from "next/dynamic";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { PerformanceMonitor } from "@react-three/drei";
 import type { QualityTier } from "@/lib/tier";
-import { DEFAULT_LOOK, STRUCTURE_KEYS, TIER_BUDGETS, type SphereLook, type Tier, type ToneMode } from "./config";
-import Fragments from "./Fragments";
-import Vortex from "./Vortex";
-import CoreGlow from "./CoreGlow";
-import Particles from "./Particles";
+import FaceHologram, { type HologramStats } from "@/components/hologram/FaceHologram";
+import { prefetchHologram, releaseHologramWorker } from "@/components/hologram/loadHologram";
+import { fillFor } from "@/components/hologram/config";
+import { DEFAULT_LOOK, TIER_BUDGETS, type SphereLook, type Tier, type ToneMode } from "./config";
 import SphereRig from "./SphereRig";
 import Effects from "./Effects";
 import StaticSphere from "./StaticSphere";
@@ -42,7 +41,7 @@ declare global {
   }
 }
 
-/** Keeps the sphere (radius 1) at ~72% of the limiting viewport dimension (88% on phones). */
+/** Keeps the hologram's unit circle at ~72% of the limiting viewport dimension (88% on phones). */
 function CameraFit() {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
@@ -51,7 +50,7 @@ function CameraFit() {
     const aspect = size.width / Math.max(1, size.height);
     const vHalf = Math.tan((cam.fov * Math.PI) / 360);
     const limitHalf = aspect < 1 ? vHalf * aspect : vHalf;
-    const fill = aspect < 0.8 ? 0.88 : 0.72;
+    const fill = fillFor(size.width, size.height);
     cam.position.set(0, 0, 1 / (fill * limitHalf));
     cam.lookAt(0, 0, 0);
     cam.updateProjectionMatrix();
@@ -114,9 +113,7 @@ function SphereFraming() {
       st.setOffsetTarget(0, 0);
       return;
     }
-    const aspect = size.width / Math.max(1, size.height);
-    const fill = aspect < 0.8 ? 0.88 : 0.72;
-    const rPx = (fill * Math.min(size.width, size.height)) / 2;
+    const rPx = (fillFor(size.width, size.height) * Math.min(size.width, size.height)) / 2;
     st.setScaleTarget(Math.max(0.05, frame.size / 2 / rPx));
     st.setOffsetTarget((frame.x - size.width / 2) / rPx, (size.height / 2 - frame.y) / rPx);
   }, [frame, size.width, size.height]);
@@ -143,8 +140,11 @@ function ContextGuard({ onLost, onRestored }: { onLost: () => void; onRestored: 
   return null;
 }
 
-/** Readiness + live stats for the harness and the panel. Flips `visible` after the second frame, once the composer's shaders exist. */
-function Telemetry({ tier, onReady }: { tier: Tier; onReady: () => void }) {
+/**
+ * Readiness + live stats for the harness and the panel. Flips `visible` (and the store's `ready`, which starts the
+ * intro) only once the hologram is built and two frames of it have rendered, so the poster stays up until then.
+ */
+function Telemetry({ tier, built, onReady }: { tier: Tier; built: HologramStats | null; onReady: () => void }) {
   const gl = useThree((s) => s.gl);
   const frames = useRef(0);
   const acc = useRef(0);
@@ -155,7 +155,7 @@ function Telemetry({ tier, onReady }: { tier: Tier; onReady: () => void }) {
     return () => setInfoAutoReset(gl, true);
   }, [gl]);
   useFrame((_, dt) => {
-    total.current++;
+    if (built) total.current++;
     if (total.current === 2) {
       window.__sphereReady = true;
       useSphereStore.getState().setReady(true);
@@ -168,15 +168,15 @@ function Telemetry({ tier, onReady }: { tier: Tier; onReady: () => void }) {
       frames.current = 0;
       acc.current = 0;
       const store = useSphereStore.getState();
-      store.setStats(fps, store.fragments);
+      store.setStats(fps, built?.filaments ?? 0);
       window.__sphereStats = {
         tier,
-        fragments: store.fragments,
         fps,
         calls: gl.info.render.calls,
         triangles: gl.info.render.triangles,
         points: gl.info.render.points,
         dpr: gl.getPixelRatio(),
+        hologram: built,
       };
     }
     gl.info.reset();
@@ -184,17 +184,15 @@ function Telemetry({ tier, onReady }: { tier: Tier; onReady: () => void }) {
   return null;
 }
 
-function Caption({ tier }: { tier: Tier }) {
+function Caption({ tier, built }: { tier: Tier; built: HologramStats | null }) {
   const fps = useSphereStore((s) => s.fps);
-  const fragments = useSphereStore((s) => s.fragments);
   return (
     <div className="pointer-events-none absolute right-4 bottom-4 select-none text-right font-mono text-[10px] uppercase tracking-[0.22em] text-fg-dim/70">
-      core // phase 1 · tier {tier} · {fragments.toLocaleString()} fragments · {fps} fps
+      hologram · tier {tier} · {built ? `${built.vertices.toLocaleString()} vertices · build ${built.buildMs} ms (${built.where})` : "building"} · {fps} fps
     </div>
   );
 }
 
-const STRUCTURAL = new Set<string>(STRUCTURE_KEYS);
 const TONES: ToneMode[] = ["none", "aces", "agx", "neutral"];
 /** full-resolution half-float passes get expensive above this many canvas pixels */
 const PIXEL_BUDGET = 4.5e6;
@@ -207,37 +205,33 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   const pinned = !!query?.get("tier");
   // ?t=seconds starts the animation clocks mid-flight (screenshot harness / review)
   const timeOffset = Math.max(0, Number(query?.get("t") ?? 0)) || 0;
+  // ?capture&freeze stops every clock at ?t= and holds the head still and front-on (poster capture)
+  const frozen = captureMode && !!query?.has("freeze");
   const toneParam = query?.get("tone");
-  const initialLook = useMemo<SphereLook>(
-    () => (toneParam && TONES.includes(toneParam as ToneMode) ? { ...DEFAULT_LOOK, toneMapping: toneParam as ToneMode } : DEFAULT_LOOK),
-    [toneParam],
+  // ?holo.ss=0 turns the low-DPR supersampling off (comparison)
+  const ssOff = query?.get("holo.ss") === "0";
+  const initialLook = useMemo<SphereLook>(() => {
+    const l = toneParam && TONES.includes(toneParam as ToneMode) ? { ...DEFAULT_LOOK, toneMapping: toneParam as ToneMode } : DEFAULT_LOOK;
+    return frozen ? { ...l, sway: 0, tilt: 0, breatheAmount: 0 } : l;
+  }, [toneParam, frozen]);
+  // every look value is live (uniforms, rig, post): the geometry is measured data and only rebuilds per tier
+  const [look, setLook] = useState<SphereLook>(initialLook);
+  const tune = useMemo(
+    () => ({ gain: look.gain, halo: look.halo, nodes: look.nodes, colorBase: look.colorBase, colorHot: look.colorHot, colorDeep: look.colorDeep }),
+    [look.gain, look.halo, look.nodes, look.colorBase, look.colorHot, look.colorDeep],
   );
-  const [look, setLookState] = useState<SphereLook>(initialLook);
-  // live keys apply immediately; structural keys (geometry rebuilds) are debounced
-  const pending = useRef<SphereLook | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const setLook = useCallback((next: SphereLook) => {
-    setLookState((prev) => {
-      const structuralChanged = STRUCTURE_KEYS.some((k) => prev[k] !== next[k]);
-      if (!structuralChanged) return next;
-      const live = { ...next };
-      for (const k of Object.keys(live) as (keyof SphereLook)[]) {
-        if (STRUCTURAL.has(k)) (live as unknown as Record<string, unknown>)[k] = prev[k];
-      }
-      pending.current = next;
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => {
-        if (pending.current) setLookState(pending.current);
-        pending.current = null;
-      }, 180);
-      return live;
-    });
-  }, []);
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
 
   const [tier, setTier] = useState<Tier>(initialTier);
+  useEffect(() => {
+    // the maps start downloading in the worker while the canvas initialises
+    prefetchHologram(initialTier);
+    return () => releaseHologramWorker();
+  }, [initialTier]);
+  useEffect(() => {
+    // the intro waits for a build in progress instead of giving up on a fixed timer
+    useSphereStore.getState().setBuilding(true);
+    return () => useSphereStore.getState().setBuilding(false);
+  }, []);
   const budget = TIER_BUDGETS[tier];
   useEffect(() => {
     useSphereStore.getState().setTier(tier);
@@ -251,19 +245,35 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
       delete window.__sphereSpin;
     };
   }, []);
-  const onBuilt = useCallback((n: number) => {
+  // the built head (stats); a tier rebuild replaces it, the readiness gate only waits for the first one
+  const [built, setBuilt] = useState<HologramStats | null>(null);
+  const onBuilt = useCallback((stats: HologramStats) => {
+    setBuilt(stats);
     const store = useSphereStore.getState();
-    store.setStats(store.fps, n);
+    store.setStats(store.fps, stats.filaments);
+    store.setBuilding(false);
+  }, []);
+  // no data / no build: the poster stays, the canvas (GL context, composer targets) is unmounted, and the page
+  // carries on as on the static tier
+  const [failed, setFailed] = useState(false);
+  const onError = useCallback(() => {
+    setFailed(true);
+    window.__sphereReady = true;
+    const store = useSphereStore.getState();
+    store.setBuilding(false);
+    store.setReady(true);
   }, []);
   const [visible, setVisible] = useState(false);
   const onReady = useCallback(() => setVisible(true), []);
-  const hidePoster = useSphereStore((s) => s.hidePoster);
-  // render loop: off until the shaders are warm, then follows the canvas's visibility
+  // render loop: off until the shaders are warm AND the head is built, then follows the canvas's visibility.
+  // Frames rendered into the still-hidden canvas while the worker builds are wasted GPU work: on software GL they
+  // queue up into a multi-second stall that delays the first head frame (and with it the scan-in intro).
+  // A failed build never starts the loop (the poster stays and the canvas is unmounted).
   const [warm, setWarm] = useState(false);
   const [inView, setInView] = useState(true);
   const onWarm = useCallback(() => setWarm(true), []);
   const onInView = useCallback((v: boolean) => setInView(v), []);
-  const frameloop = warm && inView ? "always" : "never";
+  const frameloop = warm && inView && built && !failed ? "always" : "never";
   // runtime regression: if frames drop, lower the pixel ratio, then the tier
   const [dprScale, setDprScale] = useState(1);
   const onDecline = useCallback(() => setDprScale((s) => Math.max(0.6, s * 0.8)), []);
@@ -285,6 +295,13 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
     return Math.max(1, Math.sqrt(PIXEL_BUDGET / Math.max(1, css)));
   });
   const maxDpr = Math.max(1, Math.min(budget.dpr[1], dpr, budgetDpr) * dprScale);
+  // supersampling on low-DPR displays (high / medium tiers): ~1 px filaments sampled at pixel centres break into
+  // staircase dashes and the slice stack beats against the pixel grid (moire). The canvas renders at the tier's DPR cap
+  // (within the pixel budget) and the browser box-filters it down; the slice pitch still follows the display (pitchDpr),
+  // so the head looks as designed for DPR 1, only anti-aliased. The performance monitor's declines lower it first.
+  const ssDpr = Math.min(budget.dpr[1], budgetDpr) * dprScale;
+  const supersample = tier !== "low" && dpr < 1.5 && !ssOff && ssDpr >= dpr * 1.25 ? ssDpr : 0;
+  const pitchDpr = Math.min(dpr, maxDpr);
   // incline also counts toward the monitor's flip-flops, so only declines may ever fire
   const monitorBounds = useCallback((): [number, number] => [40, Number.POSITIVE_INFINITY], []);
 
@@ -295,12 +312,13 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
       style={spinHere ? { touchAction: coarsePointer ? "pan-y" : "none" } : undefined}
       {...(spinHere ? drag : {})}
     >
-      <div className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible || hidePoster ? "opacity-0" : "opacity-100"}`} aria-hidden>
-        <StaticSphere loading />
+      <div className={`absolute inset-0 transition-opacity duration-700 ease-out ${visible && !failed ? "opacity-0" : "opacity-100"}`} aria-hidden={!failed}>
+        <StaticSphere loading={!failed} />
       </div>
+      {failed ? null : (
       <div className={`absolute inset-0 ${blend ? "mix-blend-screen" : ""} transition-opacity duration-700 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
         <Canvas
-          dpr={[budget.dpr[0], maxDpr]}
+          dpr={supersample ? supersample : [budget.dpr[0], maxDpr]}
           camera={{ fov: 40, near: 0.1, far: 50, position: [0, 0, 3.8] }}
           gl={{ antialias: false, alpha: false, powerPreference: "high-performance", stencil: false, depth: false }}
           flat
@@ -317,21 +335,19 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
           <ContextGuard onLost={onLost} onRestored={onRestored} />
           {!pinned && monitor ? <PerformanceMonitor bounds={monitorBounds} flipflops={3} onDecline={onDecline} onFallback={onFallback} /> : null}
           <Suspense fallback={null}>
-            <SphereRig look={look} coarsePointer={coarsePointer} timeOffset={timeOffset}>
-              <Fragments look={look} budget={budget} onBuilt={onBuilt} timeOffset={timeOffset} />
-              <Vortex look={look} budget={budget} timeOffset={timeOffset} />
-              <CoreGlow look={look} timeOffset={timeOffset} />
-              <Particles look={look} budget={budget} timeOffset={timeOffset} />
+            <SphereRig look={look} coarsePointer={coarsePointer} timeOffset={timeOffset} frozen={frozen}>
+              <FaceHologram tier={tier} pitchDpr={pitchDpr} tune={tune} timeOffset={timeOffset} frozen={frozen} onBuilt={onBuilt} onError={onError} />
             </SphereRig>
             <Effects look={look} budget={budget} />
           </Suspense>
-          <Telemetry tier={tier} onReady={onReady} />
+          <Telemetry tier={tier} built={built} onReady={onReady} />
           <VisibilityGate enabled={visible} onChange={onInView} />
           <Warmup onWarm={onWarm} />
         </Canvas>
       </div>
+      )}
       {showDebug ? <DebugPanel tier={tier} initialLook={initialLook} onLook={setLook} onTier={setTier} /> : null}
-      {showDebug ? <Caption tier={tier} /> : null}
+      {showDebug ? <Caption tier={tier} built={built} /> : null}
     </div>
   );
 }

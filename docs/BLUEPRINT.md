@@ -1,13 +1,15 @@
 # Core — Phase 2 blueprint
 
 Component structure and design tokens for the portfolio. Phase 3 builds exactly this.
-The sphere (Phase 1, approved) is the source of every visual decision below: the UI
-must look like it was emitted by the sphere.
+The hologram is the source of every visual decision below: the UI must look like it was
+emitted by it. (Phase 1 approved a golden sphere; it has since been replaced by a holographic
+portrait of the owner, his face measured from a photograph and drawn in golden filaments, in the
+same palette, slot and unit circle. "Sphere" in the component names below means that slot.)
 
 ## 1. Direction in one paragraph
 
 A holographic instrument panel around a living core. Deep blue-black ground with a
-faint perspective grid and scanlines; everything that glows is the sphere's gold;
+faint perspective grid and scanlines; everything that glows is the hologram's gold;
 everything that is merely labelled is cool steel. Panels are dark glass with 1px gold
 edges and corner brackets, never solid boxes. Labels, data and status text are
 monospace; headings are a squared geometric face; body copy is a quiet sans with
@@ -73,10 +75,12 @@ small 14/22 · body 16/26 · h3 20/28 (display) · h2 28/34 (display) · h1 40/4
 
 ## 2.4 Navigation: four levels, one meaning for back, real URLs
 
-The page opens on the hologram alone: the sphere, the name, the header's section list and a
-"click to see my work · drag to rotate" prompt (the prompt itself is clickable). Dragging the
-sphere (mouse or finger) rotates it in any direction (a drag across the diameter is three
-quarters of a turn at any size), with inertia on release; a press catches a coasting sphere.
+The page opens on the hologram alone: the head, the name, the header's section list and a
+"click to see my work · drag to turn" prompt (the prompt itself is clickable). Dragging the
+head (mouse or finger) turns it, never further than about ±55° of yaw and ±25° of pitch (a
+rubber band near the limits; half the circle's width reaches the yaw limit at any size); on
+release it coasts and springs back to front, and a press catches a coasting head. Between
+interactions it sways a few degrees and leans slightly toward the cursor.
 
 The site has four levels, each with its own URL (hash only; the server route stays `/`):
 
@@ -167,7 +171,8 @@ src/
   lib/
     tier.ts, useMediaQuery.ts, useReducedMotion.ts, introStorage.ts, sequence.ts (timeline helper)
   components/
-    sphere/               Phase 1 (unchanged API) + intro uniforms: uAssemble (0..shells), uIgnite (0..1)
+    sphere/               the hologram's stage, scene, rig, store and poster (same API as Phase 1)
+    hologram/             face hologram: pure geometry builder, worker, THREE objects (intro: uAssemble scan front, uIgnite)
     site/
       Site.tsx            client root: picks DesktopLayout / MobileLayout, runs the intro, owns Beams + DetailView
       DesktopLayout.tsx   the grid above
@@ -200,6 +205,14 @@ Sphere ↔ UI contract (already in `sphereStore.ts`): `pulseToward(x, y)`, `setL
 `setScaleTarget`, `setOffsetTarget`; Phase 3 adds `assemble` (0..N) and `ignite` (0..1)
 uniforms for the intro and reads `hover` from `siteStore` to lean toward a module.
 
+Hologram data choices (`scripts/hologram/pack_maps.py`): the flow map is lossy WebP (q 90; it only
+steers strands after a 16 px blur). The tone map ships at half resolution, box-filtered and quantised
+to 32 grey levels, and is upsampled bilinearly by the loader: at full resolution it was in practice a
+clean greyscale portrait, while the builder only samples it 2.6-7.5 crop px apart. Front captures at
+1440x900 DPR 2 with the full and the reduced map differ by 0.5/255 on average (no visible change to
+eyes, brows, lips or beard). Whether to go further (bake the geometry offline per tier and drop the
+maps from `public/`) is the owner's call: a baked head is several MB per tier against ~665 KB of maps.
+
 ## 5. Content schema (`src/content/content.ts`)
 
 ```ts
@@ -225,15 +238,15 @@ Adding an item = adding an object to the right array. Components never hard-code
 
 | t desktop | t mobile | what |
 |---|---|---|
-| 0.0–1.1s | 0.0–0.5s | black; gold sparks drift in from the edges and converge (particles `uIntro`) |
-| 0.5–1.9s | 0.3–1.0s | shells assemble outer → inner (`uAssemble` 0→N), then the vortex ignites (`uIgnite`) |
-| 1.9–2.5s | 1.0–1.3s | `INITIALISING` types under the sphere; the name decodes (scramble → resolve) |
+| 0.0–1.1s | 0.0–0.5s | black; gold dust drifts in and converges (`uConverge`); starts only once the head is built |
+| 0.5–1.9s | 0.3–1.0s | a scan plane draws the head top → bottom (`uAssemble` 0→1), then the filaments light (`uIgnite`) |
+| 1.9–2.5s | 1.0–1.3s | `INITIALISING` types under the hologram; the name decodes (scramble → resolve) |
 | 2.5–3.0s | 1.3–1.5s | the sequence ends on the bare hologram with the "enter the core" prompt |
 | on open | on open | three beams draw (0.05s), modules materialise in turn (0.45s), items stagger 60ms (0.85s) |
 
 Skippable (click, Esc, "skip" button). First visit plays in full; later visits play a 1s
 version (assemble 0.4s, beams 0.2s, panels 0.4s). `prefers-reduced-motion`: no intro,
-static sphere, panels fade in over 240ms.
+static poster of the hologram, panels fade in over 240ms.
 
 ## 7. Interaction map
 

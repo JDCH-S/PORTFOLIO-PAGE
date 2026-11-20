@@ -1,28 +1,51 @@
 "use client";
 
 import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { PITCH_LIMIT, SOFT_START, YAW_LIMIT } from "@/components/hologram/config";
 import { spin, useSphereStore } from "./sphereStore";
 
-/** a drag across the sphere's diameter turns it three quarters, whatever its size on screen */
-const TURN_PER_DIAMETER = 1.5 * Math.PI;
+/** a drag across the head's whole circle turns it ~110 degrees (so half the circle reaches the yaw limit), whatever its size on screen */
+const TURN_PER_DIAMETER = 0.62 * Math.PI;
 /** a coast faster than this is caught by a tap instead of the tap opening the menu */
-const CATCH_SPEED = 1.2;
+const CATCH_SPEED = 2.5;
+/** rubber-band integration step, radians (1 deg) */
+const BAND_STEP = Math.PI / 180;
+
+/**
+ * Rubber band: inside SOFT_START of the limit a drag turns the head 1:1; beyond it, moving further out meets a
+ * resistance that grows to a full stop at the limit (moving back in is always free).
+ */
+function band(cur: number, d: number, limit: number) {
+  const soft = limit * SOFT_START;
+  // sub-stepped (<= 1 deg per step): one fast pointer event can move 15 deg, almost the whole soft zone, and a single
+  // step would evaluate the resistance only at its start and hit the hard stop without the band
+  const n = Math.max(1, Math.ceil(Math.abs(d) / BAND_STEP));
+  const h = d / n;
+  let v = cur;
+  for (let i = 0; i < n; i++) {
+    const over = Math.min(1, Math.max(0, Math.abs(v) - soft) / (limit - soft));
+    const k = h * v > 0 ? (1 - over) * (1 - over) : 1;
+    v = Math.max(-limit, Math.min(limit, v + h * k));
+  }
+  return v;
+}
 
 export interface SpinDragOptions {
-  /** allow vertical drag to pitch the sphere (off on touch, where vertical swipes scroll) */
+  /** allow vertical drag to pitch the head (off on touch, where vertical swipes scroll) */
   allowPitch?: boolean;
   /** called for a tap or click that did not turn into a drag */
   onTap?: () => void;
 }
 
 /**
- * Pointer handlers that rotate the hologram by dragging (mouse or finger) with inertia
- * on release. A press that moves less than a few pixels counts as a tap.
+ * Pointer handlers that turn the hologram by dragging (mouse or finger): clamped to about +-55 deg yaw and
+ * +-25 deg pitch with a rubber band near the limits; on release it coasts and springs back to front (SphereRig).
+ * A press that moves less than a few pixels counts as a tap.
  */
 export function useSpinDrag({ allowPitch = true, onTap }: SpinDragOptions = {}) {
   const st = useRef({ id: -1, sx: 0, sy: 0, lx: 0, ly: 0, lt: 0, moved: false, vy: 0, vp: 0, k: 0.0085, slop: 5, caught: false });
 
-  // if the target unmounts mid-drag (an item opened by keyboard), the sphere must not stay "held"
+  // if the target unmounts mid-drag (an item opened by keyboard), the head must not stay "held"
   useEffect(
     () => () => {
       spin.active = false;
@@ -64,11 +87,13 @@ export function useSpinDrag({ allowPitch = true, onTap }: SpinDragOptions = {}) 
         // a pointer at rest says "click"; only an actual drag shows the grabbing hand
         e.currentTarget.style.cursor = "grabbing";
       }
-      spin.yaw += dx * s.k;
-      if (allowPitch) spin.pitch = Math.max(-1.1, Math.min(1.1, spin.pitch + dy * s.k));
-      // smoothed release velocity
-      s.vy = s.vy * 0.6 + ((dx * s.k) / dt) * 0.4;
-      s.vp = allowPitch ? s.vp * 0.6 + ((dy * s.k) / dt) * 0.4 : 0;
+      const y0 = spin.yaw;
+      const p0 = spin.pitch;
+      spin.yaw = band(spin.yaw, dx * s.k, YAW_LIMIT);
+      if (allowPitch) spin.pitch = band(spin.pitch, dy * s.k, PITCH_LIMIT);
+      // smoothed release velocity of the head itself (after the rubber band)
+      s.vy = s.vy * 0.6 + ((spin.yaw - y0) / dt) * 0.4;
+      s.vp = allowPitch ? s.vp * 0.6 + ((spin.pitch - p0) / dt) * 0.4 : 0;
       s.lx = e.clientX;
       s.ly = e.clientY;
       s.lt = now;
@@ -87,10 +112,10 @@ export function useSpinDrag({ allowPitch = true, onTap }: SpinDragOptions = {}) 
       if (s.moved) {
         // stale velocity after a pause means the finger stopped: no fling
         const stale = performance.now() - s.lt > 120;
-        spin.vYaw = stale ? 0 : Math.max(-6, Math.min(6, s.vy));
-        spin.vPitch = stale ? 0 : Math.max(-6, Math.min(6, s.vp));
+        spin.vYaw = stale ? 0 : Math.max(-4, Math.min(4, s.vy));
+        spin.vPitch = stale ? 0 : Math.max(-3, Math.min(3, s.vp));
       } else if (!cancelled && !s.caught) {
-        // a still press on a coasting sphere just catches it
+        // a still press on a coasting head just catches it
         onTap?.();
       }
     },
