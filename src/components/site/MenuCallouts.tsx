@@ -2,31 +2,20 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { m } from "framer-motion";
-import { aboutEntry, modules } from "@/content/content";
+import { sections } from "@/content/content";
 import type { ModuleId } from "@/content/types";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
 import Decode from "@/components/ui/Decode";
 import { rovingKeys } from "@/lib/roving";
-
-interface CalloutSpec {
-  id: ModuleId;
-  index: string;
-  title: string;
-  count?: number;
-  blurb: string;
-  /** angle on screen, degrees, clockwise from +x (y down) */
-  angle: number;
-  muted?: boolean;
-}
+import { navLink, openSection } from "@/lib/nav";
 
 /** where each callout hangs off the rim (degrees, clockwise from +x); DOM and Tab order stay 01..05 */
 const ANGLE: Record<ModuleId, number> = { projects: 210, agents: 330, skills: 30, systems: 150, about: 90 };
-const SPECS: CalloutSpec[] = [
-  ...modules.map((m) => ({ ...m, count: m.items.length, angle: ANGLE[m.id as ModuleId] })),
-  { ...aboutEntry, angle: ANGLE.about, muted: true },
-];
+const SPECS = sections.map((sec) => ({ ...sec, angle: ANGLE[sec.id] }));
+/** arrow keys go clockwise around the ring, starting top-left */
+const CLOCKWISE = (Object.keys(ANGLE) as ModuleId[]).sort((a, b) => ((ANGLE[a] - 210 + 360) % 360) - ((ANGLE[b] - 210 + 360) % 360));
 
 const ELBOW = 36; // leader length from the rim to the elbow
 const ARM = 22; // horizontal arm from the elbow to the text
@@ -65,7 +54,8 @@ const GLOW_HOT = "0 0 16px var(--gold-glow), 0 0 3px rgba(255,236,200,0.6)";
 
 /**
  * The menu: five callouts attached to the hologram's rim by leader lines, the way an
- * instrument labels a specimen. Text only: index, title, count; the blurb on hover.
+ * instrument labels a specimen. Text only: index, title, count and a few plain words;
+ * the blurb on hover or focus. The section the visitor was last in stays lit.
  */
 export default function MenuCallouts() {
   const step = useSiteStore((s) => s.step);
@@ -73,7 +63,7 @@ export default function MenuCallouts() {
   const hover = useSiteStore((s) => s.hover);
   const setHover = useSiteStore((s) => s.setHover);
   const setAnchor = useSiteStore((s) => s.setAnchor);
-  const openModule = useSiteStore((s) => s.openModule);
+  const lastModule = useSiteStore((s) => s.lastModule);
   const frame = useSphereStore((s) => s.frame);
   const reduced = useReducedMotion();
   const [geo, setGeo] = useState<Geo[]>([]);
@@ -98,8 +88,15 @@ export default function MenuCallouts() {
   const anchorFor = useCallback((id: ModuleId) => (el: HTMLElement | null) => setAnchor(`opt-${id}`, el), [setAnchor]);
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-20" aria-hidden={!shown} inert={!shown} onKeyDown={rovingKeys("button[data-option]")}>
-      <svg className="absolute inset-0 h-full w-full">
+    <nav
+      id="sections-ring"
+      aria-label="Sections"
+      className="pointer-events-none fixed inset-0 z-20"
+      aria-hidden={!shown}
+      inert={!shown}
+      onKeyDown={rovingKeys("[data-option]", CLOCKWISE)}
+    >
+      <svg aria-hidden className="absolute inset-0 h-full w-full">
         <defs>
           {geo.map((g) => (
             <linearGradient key={g.id} id={`lead-${g.id}`} gradientUnits="userSpaceOnUse" x1={g.rim.x} y1={g.rim.y} x2={g.label.x} y2={g.label.y}>
@@ -109,11 +106,10 @@ export default function MenuCallouts() {
           ))}
         </defs>
         {geo.map((g, i) => {
-          const spec = SPECS[i];
-          const on = hover === `opt-${g.id}` || focusKey === `opt-${g.id}`;
+          const on = hover === `opt-${g.id}` || focusKey === `opt-${g.id}` || lastModule === g.id;
           const arm = g.side === "bottom" ? "" : ` L ${g.label.x} ${g.elbow.y}`;
           return (
-            <g key={g.id} style={{ opacity: spec.muted && !on ? 0.55 : 1, transition: "opacity 240ms var(--ease-out)" }}>
+            <g key={g.id}>
               <m.path
                 d={`M ${g.rim.x} ${g.rim.y} L ${g.elbow.x} ${g.elbow.y}${arm}`}
                 fill="none"
@@ -141,16 +137,19 @@ export default function MenuCallouts() {
       {geo.map((g, i) => {
         const spec = SPECS[i];
         const key = `opt-${g.id}`;
-        const on = hover === key || focusKey === key;
+        const active = hover === key || focusKey === key;
+        const on = active || lastModule === g.id;
         const right = g.side === "right";
         const bottom = g.side === "bottom";
+        const link = navLink({ depth: 2, section: g.id }, () => openSection(g.id));
+        const align = bottom ? "left-1/2 -translate-x-1/2 text-center" : right ? "left-0 text-left" : "right-0 text-right";
         return (
-          <m.button
+          <m.a
             key={g.id}
             ref={anchorFor(g.id)}
-            type="button"
+            href={link.href}
+            onClick={link.onClick}
             data-option={g.id}
-            onClick={() => openModule(g.id)}
             onMouseEnter={() => setHover(key)}
             onMouseLeave={() => setHover(null)}
             onFocus={() => {
@@ -170,9 +169,9 @@ export default function MenuCallouts() {
             className={`absolute flex h-11 items-center outline-none ${shown ? "pointer-events-auto" : "pointer-events-none"} ${
               bottom ? "-translate-x-1/2" : right ? "" : "-translate-x-full"
             } ${bottom ? "" : "-translate-y-1/2"}`}
-            style={{ left: g.label.x, top: g.label.y, opacity: spec.muted && !on ? 0.7 : 1 }}
+            style={{ left: g.label.x, top: g.label.y }}
           >
-            {/* title row sits exactly on the leader's arm; the blurb hangs below it, out of flow */}
+            {/* title row sits exactly on the leader's arm; the hint and blurb hang below it, out of flow */}
             <span className="relative flex items-baseline gap-3">
               <span className="label text-steel-dim">{spec.index}</span>
               <Decode
@@ -188,20 +187,21 @@ export default function MenuCallouts() {
               <span
                 aria-hidden
                 className="absolute -bottom-1 h-px bg-gold transition-[width,opacity] duration-[240ms]"
-                style={{ [right || bottom ? "left" : "right"]: 0, width: on ? "100%" : 0, opacity: on ? 1 : 0 }}
+                style={{ [right || bottom ? "left" : "right"]: 0, width: active ? "100%" : 0, opacity: active ? 1 : 0 }}
               />
-              <span
-                id={`opt-${g.id}-blurb`}
-                className={`absolute top-full mt-2 w-max max-w-[260px] font-mono text-[12px] leading-[18px] text-steel transition-opacity duration-[240ms] ${on ? "opacity-100" : "opacity-0"} ${
-                  bottom ? "left-1/2 -translate-x-1/2 text-center" : right ? "left-0 text-left" : "right-0 text-right"
-                }`}
-              >
-                {spec.blurb}
+              <span className={`absolute top-full mt-2 flex w-max max-w-[260px] flex-col gap-1 ${align}`}>
+                {/* a few plain words, always there on wide screens */}
+                <span aria-hidden className="label hidden whitespace-nowrap text-steel min-[1100px]:block">
+                  {spec.hint}
+                </span>
+                <span id={`opt-${g.id}-blurb`} className={`font-mono text-[12px] leading-[18px] text-steel transition-opacity duration-[240ms] ${active ? "opacity-100" : "opacity-0"}`}>
+                  {spec.blurb}
+                </span>
               </span>
             </span>
-          </m.button>
+          </m.a>
         );
       })}
-    </div>
+    </nav>
   );
 }

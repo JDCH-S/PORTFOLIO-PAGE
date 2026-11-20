@@ -1,25 +1,53 @@
 "use client";
 
-import { profile } from "@/content/content";
+import { emailHref, profile } from "@/content/content";
 import { useSiteStore } from "@/store/siteStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
+import { home, navLink } from "@/lib/nav";
 import Decode from "@/components/ui/Decode";
 import CornerNav from "./CornerNav";
 
-/** Desktop header: name (decoded in), role, tick marks and the corner nav. */
+const availability = profile.availability.replace(/^PLACEHOLDER · /, "");
+
+/**
+ * Desktop header: the name (a way home from anywhere but home), the role with a direct
+ * email link, tick marks, and the section list or trail.
+ */
 export default function Header({ className = "" }: { className?: string }) {
   const step = useSiteStore((s) => s.step);
+  const view = useSiteStore((s) => s.view);
   const reduced = useReducedMotion();
   const show = step >= 3;
+  const name = (
+    <Decode as="h1" text={profile.name.toUpperCase()} active={show} reduced={reduced} className="font-display text-[26px] leading-[30px] font-semibold tracking-[0.06em] text-gold-hot" />
+  );
   return (
     <header
       className={`flex items-start justify-between gap-6 transition-opacity duration-[480ms] ease-[var(--ease-out)] ${className}`}
       style={{ opacity: step >= 2 ? 1 : 0.35 }}
     >
       <div className="min-w-0">
-        <Decode as="h1" text={profile.name.toUpperCase()} active={show} reduced={reduced} className="font-display text-[26px] leading-[30px] font-semibold tracking-[0.06em] text-gold-hot" />
-        <p className="label mt-1 text-steel">
-          {profile.role} <span className="text-steel-dim">·</span> {profile.availability}
+        {view === "core" ? (
+          name
+        ) : (
+          <a {...navLink({ depth: 0 }, home)} className="group relative block outline-none" aria-label={`${profile.name}, home`}>
+            {name}
+            <span aria-hidden className="absolute -bottom-0.5 left-0 h-px w-full bg-gold opacity-0 transition-opacity duration-[240ms] group-hover:opacity-100 group-focus-visible:opacity-100" />
+          </a>
+        )}
+        <p className="label mt-1 flex flex-wrap items-center gap-x-2 text-steel">
+          <span>{profile.role}</span>
+          <span aria-hidden className="text-steel-dim">
+            ·
+          </span>
+          {emailHref ? (
+            <a href={emailHref} className="group relative inline-flex min-h-6 items-center text-steel transition-colors hover:text-gold-hot focus-visible:text-gold-hot">
+              {availability} · email ↗
+              <span aria-hidden className="absolute bottom-0.5 left-0 h-px w-full bg-gold opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+            </a>
+          ) : (
+            <span>{availability}</span>
+          )}
         </p>
       </div>
       <div aria-hidden className="hidden flex-1 items-center gap-[6px] self-center xl:flex">

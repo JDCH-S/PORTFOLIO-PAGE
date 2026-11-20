@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { m, AnimatePresence } from "framer-motion";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
+import { openItem } from "@/lib/nav";
 
 interface Stream {
   id: string;
@@ -20,8 +21,8 @@ const COUNT = 26;
  */
 export default function FragmentStream() {
   const [stream, setStream] = useState<Stream | null>(null);
-  const openItem = useSiteStore((s) => s.openItem);
   const reduced = useReducedMotion();
+  const timers = useRef<number[]>([]);
 
   useEffect(() => {
     const onOpen = (e: Event) => {
@@ -44,14 +45,28 @@ export default function FragmentStream() {
         len: 6 + Math.random() * 16,
       }));
       setStream({ id, from, to });
-      window.setTimeout(() => {
-        openItem(id);
-        window.setTimeout(() => setStream(null), 200);
-      }, 260);
+      timers.current.forEach((t) => window.clearTimeout(t));
+      timers.current = [
+        window.setTimeout(() => {
+          // the item is opened through nav, so it gets its own history entry
+          if (useSiteStore.getState().phase === "idle") openItem(id);
+          timers.current.push(window.setTimeout(() => setStream(null), 200));
+        }, 260),
+      ];
+    };
+    // Back during the burst cancels the open
+    const onBack = () => {
+      timers.current.forEach((t) => window.clearTimeout(t));
+      timers.current = [];
+      setStream(null);
     };
     window.addEventListener("core:open-item", onOpen);
-    return () => window.removeEventListener("core:open-item", onOpen);
-  }, [openItem, reduced]);
+    window.addEventListener("popstate", onBack);
+    return () => {
+      window.removeEventListener("core:open-item", onOpen);
+      window.removeEventListener("popstate", onBack);
+    };
+  }, [reduced]);
 
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 z-[60]">

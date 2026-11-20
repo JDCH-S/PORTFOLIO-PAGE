@@ -84,6 +84,20 @@ export type Category = Item["category"];
 export type ModuleId = "projects" | "agents" | "skills" | "systems" | "about";
 export type ContentModuleId = Exclude<ModuleId, "about">;
 
+/** One of the five sections as every list shows it. */
+export interface Section {
+  id: ModuleId;
+  /** "01".."05" */
+  index: string;
+  title: string;
+  /** a few plain words under the title, e.g. "case studies" */
+  hint: string;
+  /** one sentence shown on hover or focus */
+  blurb: string;
+  /** number of items; absent for About */
+  count?: number;
+}
+
 export interface Fact {
   label: string;
   value: string;

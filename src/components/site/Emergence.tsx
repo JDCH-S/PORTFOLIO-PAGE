@@ -6,10 +6,11 @@ import { useSiteStore } from "@/store/siteStore";
 import { spin, useSphereStore } from "@/components/sphere/sphereStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
 import { EMERGE, INTRO_LAST_STEP } from "@/lib/sequence";
+import { openSections, stepSection, up } from "@/lib/nav";
 
 const focus = (el: Element | null | undefined) => (el as HTMLElement | null)?.focus({ preventScroll: true });
 /** the visible option button for a module (the hidden copy sits under an inert ancestor) */
-const optionButton = (id: ModuleId) => Array.from(document.querySelectorAll<HTMLElement>(`button[data-option="${id}"]`)).find((el) => !el.closest("[inert]"));
+const optionButton = (id: ModuleId) => Array.from(document.querySelectorAll<HTMLElement>(`[data-option="${id}"]`)).find((el) => !el.closest("[inert]"));
 
 /**
  * Drives the reveal steps for each view: core (bare sphere), menu (beams + options),
@@ -31,17 +32,21 @@ export default function Emergence({ desktop }: { desktop: boolean }) {
   // which input drove the last change decides whether focus is moved
   useEffect(() => {
     let lastPointer = 0;
+    const mark = (input: "pointer" | "keyboard") => {
+      lastInput.current = input;
+      useSiteStore.getState().setLastInput(input);
+    };
     const onPointer = () => {
       lastPointer = performance.now();
-      lastInput.current = "pointer";
+      mark("pointer");
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Tab" || e.key === "Enter" || e.key === "Escape" || e.key === " " || e.key.startsWith("Arrow")) lastInput.current = "keyboard";
+      if (e.key === "Tab" || e.key === "Enter" || e.key === "Escape" || e.key === " " || e.key.startsWith("Arrow") || e.key.startsWith("Page")) mark("keyboard");
     };
     // screen readers, voice control and switch access activate with a synthetic click (detail 0)
     const onClick = (e: MouseEvent) => {
       // (a cancelled touch press also yields detail 0, hence the pointer check)
-      if (e.detail === 0 && performance.now() - lastPointer > 500) lastInput.current = "keyboard";
+      if (e.detail === 0 && performance.now() - lastPointer > 500) mark("keyboard");
     };
     window.addEventListener("pointerdown", onPointer, true);
     window.addEventListener("keydown", onKey, true);
@@ -73,7 +78,7 @@ export default function Emergence({ desktop }: { desktop: boolean }) {
       setStep(3);
       const ids = [window.setTimeout(() => setStep(4), t.options * 1000)];
       // back from a module: focus returns to that module's option
-      if (byKeyboard) ids.push(window.setTimeout(() => focus(optionButton(lastModule.current ?? "projects")), t.options * 1000 + 60));
+      if (byKeyboard) ids.push(window.setTimeout(() => focus(optionButton(useSiteStore.getState().lastModule ?? lastModule.current ?? "projects")), t.options * 1000 + 60));
       return () => ids.forEach((id) => window.clearTimeout(id));
     }
     // module: the panel materialises, then its items. On desktop a module switch remounts the
@@ -94,21 +99,30 @@ export default function Emergence({ desktop }: { desktop: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = useSiteStore.getState();
-      if (s.phase !== "idle") return;
+      if (s.phase !== "idle" || e.defaultPrevented) return;
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-      if (e.key === "Escape") {
-        if (s.view === "module") {
-          e.preventDefault();
-          s.backToMenu();
-        } else if (s.view === "menu") {
-          e.preventDefault();
-          s.closeToCore();
-        }
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (e.altKey || e.metaKey || e.ctrlKey) return;
+      // one meaning for Esc everywhere: up one level (the dialog handles its own Esc)
+      if (e.key === "Escape" && s.view !== "core") {
+        e.preventDefault();
+        up();
+        return;
       }
       if (e.key === "Enter" && s.view === "core" && (!target || target === document.body)) {
         e.preventDefault();
-        s.openMenu();
+        openSections();
+        return;
+      }
+      // in a section, left/right step to the neighbouring section (arrow groups handle their own keys first)
+      if (s.view === "module") {
+        if (e.key === "ArrowRight" || e.key === "PageDown") {
+          e.preventDefault();
+          stepSection(1);
+        } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+          e.preventDefault();
+          stepSection(-1);
+        }
       }
     };
     window.addEventListener("keydown", onKey);

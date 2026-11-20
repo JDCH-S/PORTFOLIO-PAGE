@@ -71,29 +71,47 @@ small 14/22 · body 16/26 · h3 20/28 (display) · h2 28/34 (display) · h1 40/4
   easing out `cubic-bezier(.2,.8,.2,1)`, in-out `cubic-bezier(.65,0,.35,1)`; stagger 60ms;
   `prefers-reduced-motion` removes all movement and keeps opacity fades ≤ 240ms.
 
-## 2.4 The core is the default view; content emerges in two steps
+## 2.4 Navigation: four levels, one meaning for back, real URLs
 
-The page opens on the hologram alone: the sphere, the name, the corner nav and an
-"enter the core · drag to rotate" prompt. Dragging the sphere (mouse or finger) rotates it in
-any direction (a drag across the diameter is three quarters of a turn at any size), with inertia
-on release; a press catches a coasting sphere. Tapping it steps through three views:
+The page opens on the hologram alone: the sphere, the name, the header's section list and a
+"click to see my work · drag to rotate" prompt (the prompt itself is clickable). Dragging the
+sphere (mouse or finger) rotates it in any direction (a drag across the diameter is three
+quarters of a turn at any size), with inertia on release; a press catches a coasting sphere.
 
-1. **core**: the hologram alone.
-2. **menu**: five callouts emerge on the sphere's rim, the way an instrument labels a specimen:
-   a leader line from the rim to a text label (index, title, count; blurb on hover). No
-   containers. Projects upper-left, Agents upper-right, Systems lower-left, Skills lower-right,
-   About below. On mobile they hang off a spine that drops from the sphere: index, shard, title.
-3. **module**: clicking a callout opens only that section. On desktop the sphere and the other
-   options (on the same spine, under the sphere) move to the left column and the section fills
-   the right, with one beam from the sphere to the section title; on mobile the sphere docks
-   into the sticky header and the section is one of five swipeable tabs.
+The site has four levels, each with its own URL (hash only; the server route stays `/`):
+
+| level | URL | what is on screen |
+|---|---|---|
+| home | `/` | the hologram alone |
+| sections | `#sections` | five callouts on the sphere's rim (desktop) or a spine of rows under it (phone) |
+| section | `#projects` … `#about` | one section open |
+| item | `#projects/prj-01` | one item over its section (overlay on desktop, bottom sheet on phones) |
+
+- **Back means up one level, everywhere.** Esc, the browser or phone Back gesture, a click on
+  the sphere and every visible "‹" control go item → section → sections → home. Going deeper
+  pushes a history entry; moving sideways (tabs, swipes, pagers, prev/next) replaces it, so Back
+  never walks through siblings. A shared link to an item plays the short intro, opens it, and
+  Back goes to its section and then off the site. Refresh keeps the place. All history writes
+  live in `src/lib/nav.ts`.
+- **One section list per view, always 01–05 in the same order**, the current one lit:
+  desktop shows it in the header at home, as callouts in the sections view and as a spine under
+  the parked sphere in a section (headed by "‹ all sections"); elsewhere the header shows a
+  one-line trail, "home / sections / 02 agents". Phones show the spine in the sections view and
+  tabs in a section. The section the visitor was last in stays lit.
+- **Visible ways out, in plain words**: "‹ all sections" (desktop spine), the trail, "× close"
+  at the end of the phone list, "‹ sections" with ‹ 02 / 05 › at the bottom of the phone screen
+  (thumb zone), the item breadcrumb "‹ 01 projects / prj-01" with prev / n / next, and a
+  pager at the end of every section. The name in the header always goes home.
+- **Phones**: a stray tap on the sphere inside a section does not navigate; it pulses the sphere
+  and lights "‹ sections". Swipes switch at 22% of the width (or a flick), the tab underline
+  slides under the finger and 12px of the next section peeks in. The sheet closes with a
+  downward pull from anywhere once its content is at the top.
+- **Words**: "home", "sections", "see my work"; never "core" or "module" in the interface.
+  Each section has a few plain words under its name ("case studies", "agent skill files").
 
 Sections: Projects, Agents, **Skills** (the reusable skills the agents load, in the shape of a
-skill file: name, version, trigger, tools, used by) , Systems, and **About** (identity card,
-bio, now, facts, timeline, links).
-
-Tapping the sphere goes back one step (module → menu → core); Esc does the same. The corner
-nav can jump straight to a module. The layouts below describe the menu and module states.
+skill file: name, version, trigger, tools, used by), Systems, and **About** (identity card,
+bio, now, facts, timeline, links; the header also carries a direct "email ↗" link).
 
 ## 3. Layouts
 
@@ -224,11 +242,13 @@ static sphere, panels fade in over 240ms.
 | corner nav / tab | scrolls or switches module; sets `activeModule` | pulse toward that module |
 | scroll (mobile) | sphere → 40px emblem in the sticky header | `scaleTarget`/`offsetTarget` follow scroll |
 
-Keyboard: Tab through nav, modules and items; Enter opens; Esc closes; arrow keys move
-between the options (menu and spine) and between items in a module. After a keyboard action
-focus follows the view: the core button, the option you came from, the opened panel. Focus rings
-are 1px `--gold`; the text-only options show focus as their hover state (hot title, rule) instead
-of a box, so nothing draws a container around them.
+Keyboard: Enter on the page opens the sections; Esc goes up one level; ← → step between
+sections in a section and between items in an open item; arrow keys move within any list
+(clockwise around the callout ring). A skip link jumps to the open section. After a keyboard
+action focus follows the view: the sphere, the section you came from, the opened section, the
+card of the item you closed. Focus is a 1px gold ring on ordinary controls, gold corner ticks
+on the sphere, and the hover state (hot title, rule) on the text-only sections, so nothing draws
+a container around them. Changes are announced through a polite live region.
 
 ## 8. Assumptions to confirm
 

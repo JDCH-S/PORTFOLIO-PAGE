@@ -4,7 +4,7 @@
  *
  * Every entry below is a PLACEHOLDER in the exact shape to fill in.
  */
-import type { About, Agent, Profile, Project, Skill, System } from "./types";
+import type { About, Agent, ContentModuleId, Item, ModuleId, Profile, Project, Section, Skill, System } from "./types";
 
 export const profile: Profile = {
   name: "Juan Diego Chiriboga",
@@ -233,10 +233,44 @@ export const systems: System[] = [
 ];
 
 export const modules = [
-  { id: "projects", title: "Projects", index: "01", items: projects, blurb: "Mission files: the problem, what was built, the measurable result." },
-  { id: "agents", title: "Agents", index: "02", items: agents, blurb: "Live units: their role, tools and activity." },
-  { id: "skills", title: "Skills", index: "03", items: skills, blurb: "The reusable skills the agents load: instructions plus the tools they wrap." },
-  { id: "systems", title: "Systems", index: "04", items: systems, blurb: "Architecture diagrams with the data flowing between components." },
+  { id: "projects", title: "Projects", index: "01", hint: "case studies", items: projects, blurb: "Case studies: the problem, what I built, the measurable result." },
+  { id: "agents", title: "Agents", index: "02", hint: "AI agents I run", items: agents, blurb: "The AI agents I run: their role, tools and live activity." },
+  { id: "skills", title: "Skills", index: "03", hint: "agent skill files", items: skills, blurb: "Skill files my agents load: instructions plus the tools they wrap." },
+  { id: "systems", title: "Systems", index: "04", hint: "architecture", items: systems, blurb: "Architecture diagrams with the data flowing between components." },
 ] as const;
 
-export const aboutEntry = { id: "about", title: "About", index: "05", blurb: "Who is behind the core." } as const;
+export const aboutEntry = { id: "about", title: "About", index: "05", hint: "bio · contact", blurb: "Who I am and how to reach me." } as const;
+
+/** The five sections in their fixed 01-05 order: the single source for every list, title and index. */
+export const sections: Section[] = [
+  ...modules.map((m) => ({ id: m.id as ModuleId, index: m.index, title: m.title, hint: m.hint, blurb: m.blurb, count: m.items.length })),
+  { id: aboutEntry.id, index: aboutEntry.index, title: aboutEntry.title, hint: aboutEntry.hint, blurb: aboutEntry.blurb },
+];
+
+export const sectionIds: ModuleId[] = sections.map((s) => s.id);
+
+export function sectionById(id: ModuleId): Section {
+  return sections.find((s) => s.id === id) ?? sections[0];
+}
+
+const ITEMS: Record<ContentModuleId, readonly Item[]> = { projects, agents, skills, systems };
+
+/** The items a section lists, in order (About has none). */
+export function itemsOf(id: ModuleId): readonly Item[] {
+  return id === "about" ? [] : ITEMS[id];
+}
+
+/** The section an item belongs to, or null for an unknown id. */
+export function sectionOfItem(itemId: string): ContentModuleId | null {
+  for (const id of Object.keys(ITEMS) as ContentModuleId[]) if (ITEMS[id].some((i) => i.id === itemId)) return id;
+  return null;
+}
+
+export function findItem(itemId: string | null): Item | undefined {
+  if (!itemId) return undefined;
+  const sec = sectionOfItem(itemId);
+  return sec ? ITEMS[sec].find((i) => i.id === itemId) : undefined;
+}
+
+/** The mailto link from the profile, if there is one. */
+export const emailHref = profile.links.find((l) => l.href.startsWith("mailto:"))?.href ?? null;

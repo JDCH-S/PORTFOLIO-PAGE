@@ -59,7 +59,11 @@ export function useSpinDrag({ allowPitch = true, onTap }: SpinDragOptions = {}) 
       const dt = Math.max(1, now - s.lt) / 1000;
       const dx = e.clientX - s.lx;
       const dy = e.clientY - s.ly;
-      if (!s.moved && Math.hypot(e.clientX - s.sx, e.clientY - s.sy) > s.slop) s.moved = true;
+      if (!s.moved && Math.hypot(e.clientX - s.sx, e.clientY - s.sy) > s.slop) {
+        s.moved = true;
+        // a pointer at rest says "click"; only an actual drag shows the grabbing hand
+        e.currentTarget.style.cursor = "grabbing";
+      }
       spin.yaw += dx * s.k;
       if (allowPitch) spin.pitch = Math.max(-1.1, Math.min(1.1, spin.pitch + dy * s.k));
       // smoothed release velocity
@@ -78,6 +82,7 @@ export function useSpinDrag({ allowPitch = true, onTap }: SpinDragOptions = {}) 
       if (e.pointerId !== s.id) return;
       s.id = -1;
       spin.active = false;
+      e.currentTarget.style.cursor = "";
       e.currentTarget.releasePointerCapture?.(e.pointerId);
       if (s.moved) {
         // stale velocity after a pause means the finger stopped: no fling

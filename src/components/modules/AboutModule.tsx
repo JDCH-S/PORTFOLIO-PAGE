@@ -19,7 +19,7 @@ export default function AboutModule({ className = "" }: { className?: string; co
   const reduced = useReducedMotion();
   const shown = step >= 6;
   return (
-    <ModuleFrame id="about" index="05" title="About" className={className}>
+    <ModuleFrame id="about" className={className}>
       <m.div
         initial={false}
         animate={shown ? { opacity: 1, y: 0 } : { opacity: 0, y: 6 }}

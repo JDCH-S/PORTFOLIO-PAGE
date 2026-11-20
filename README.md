@@ -52,14 +52,13 @@ Useful query parameters while reviewing (they work on `/` and `/sphere`):
   converge, shells assemble outer to inner, the vortex ignites, `INITIALISING` types, the name
   decodes. Skippable; remembered in localStorage; a 1s version on later visits; no intro with
   reduced motion.
-- Drag the sphere (mouse or finger) to rotate it in any direction; a drag across its diameter
-  turns it three quarters whatever its size on screen, and it coasts to a stop (`useSpinDrag.ts`,
-  applied in `SphereRig.tsx`). A press on a coasting sphere catches it. Tap it to step through
-  the views held in `siteStore.ts`: core → menu (five callouts hanging off the sphere's rim:
-  Projects, Agents, Skills, Systems, About) → module (only the chosen one, the others as text
-  rows on a spine under the sphere). Esc or another tap on the sphere steps back; while an item
-  is open, tapping the parked sphere closes it. `Emergence.tsx` times the reveals and, after a
-  keyboard action, moves focus with the view (core button, the option you came from, the panel).
+- Drag the sphere (mouse or finger) to rotate it in any direction; it coasts to a stop
+  (`useSpinDrag.ts`, applied in `SphereRig.tsx`). Click or tap it ("see my work") to reveal the
+  five sections. Every level has a URL (`#sections`, `#projects`, `#projects/prj-01`), and
+  `src/lib/nav.ts` is the only code that writes history: going deeper pushes, moving sideways
+  replaces, and Esc, Back, the sphere and every "‹" control go up one level. `NavSync.tsx`
+  applies Back/Forward and deep links; `src/lib/route.ts` parses and formats the hash.
+  `Emergence.tsx` times the reveals and moves focus after keyboard actions.
 - Five sections: **Projects** (mission files), **Agents** (live units), **Skills** (the reusable
   skills the agents load: trigger, tools, which agents use them), **Systems** (architecture
   diagrams) and **About** (bio, facts, timeline, links; no items to open).

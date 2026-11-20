@@ -9,16 +9,21 @@ import Tag from "@/components/ui/Tag";
 /** Mission-file cards. */
 export default function ProjectsModule({ className = "" }: { className?: string }) {
   return (
-    <ModuleFrame id="projects" index="01" title="Projects" count={projects.length} status="mission files" className={className}>
+    <ModuleFrame id="projects" count={projects.length} status="mission files" className={className}>
       <ItemList>
         {projects.map((p) => (
-          <ItemButton key={p.id} itemId={p.id} className="p-3" aria-label={`${p.code} ${p.name}`}>
+          <ItemButton key={p.id} itemId={p.id} className="p-3">
             <div className="mb-1 flex items-baseline justify-between gap-3">
               <span className="label text-gold">{p.code}</span>
               <span className="label text-steel-dim">mission file</span>
             </div>
-            <h3 className="font-display text-[16px] leading-[22px] font-semibold text-fg">{p.name}</h3>
-            <p className="mt-1 text-[14px] leading-[22px] text-fg-dim">{p.tagline}</p>
+            <h3 id={`item-${p.id}-title`} className="font-display text-[16px] leading-[22px] font-semibold text-fg">
+              <span className="sr-only">{p.code}: </span>
+              {p.name}
+            </h3>
+            <p id={`item-${p.id}-desc`} className="mt-1 text-[14px] leading-[22px] text-fg-dim">
+              {p.tagline}
+            </p>
             <dl className="mt-3 grid grid-cols-[64px_1fr] gap-x-3 gap-y-1 text-[13px] leading-[20px]">
               <dt className="label text-steel">problem</dt>
               <dd className="text-fg-dim">{p.problem}</dd>

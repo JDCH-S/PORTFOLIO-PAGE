@@ -6,11 +6,11 @@ import type { ModuleId } from "@/content/types";
 import { useSiteStore } from "@/store/siteStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
 import Panel from "@/components/hud/Panel";
+import { sectionById } from "@/content/content";
+import SectionPager from "./SectionPager";
 
 export interface ModuleFrameProps {
   id: ModuleId;
-  index: string;
-  title: string;
   count?: number;
   status?: string;
   children: ReactNode;
@@ -21,7 +21,8 @@ export interface ModuleFrameProps {
  * A module panel: title row, status line, beam anchor, and the materialise animation
  * (outline assembles, flickers, then fills) driven by the intro step.
  */
-export default function ModuleFrame({ id, index, title, count, status, children, className = "" }: ModuleFrameProps) {
+export default function ModuleFrame({ id, count, status, children, className = "" }: ModuleFrameProps) {
+  const { index, title } = sectionById(id);
   const step = useSiteStore((s) => s.step);
   const hovered = useSiteStore((s) => s.hover === id);
   const setHover = useSiteStore((s) => s.setHover);
@@ -63,7 +64,9 @@ export default function ModuleFrame({ id, index, title, count, status, children,
       >
         <div className="mb-3 flex items-baseline justify-between gap-3 border-b border-steel-line pb-3">
           <h2 id={`module-${id}-title`} className="shrink-0 font-display text-h3 font-semibold tracking-[0.08em] text-gold uppercase">
-            <span className="mr-2 text-steel-dim">{index}</span>
+            <span aria-hidden className="mr-2 text-steel-dim">
+              {index}
+            </span>{" "}
             {title}
           </h2>
           <span className="label min-w-0 truncate whitespace-nowrap text-steel">
@@ -72,7 +75,10 @@ export default function ModuleFrame({ id, index, title, count, status, children,
           </span>
         </div>
         {/* a horizontal finger swipe that starts in here belongs to the mobile tab strip */}
-        <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin] [touch-action:pan-y]">{children}</div>
+        <div data-scroll className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin] [touch-action:pan-y]">
+          {children}
+          <SectionPager id={id} />
+        </div>
       </Panel>
     </m.div>
   );

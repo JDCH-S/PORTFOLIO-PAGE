@@ -23,6 +23,8 @@ const ItemButton = forwardRef<HTMLButtonElement, ItemButtonProps>(function ItemB
         ref={ref}
         type="button"
         data-item={itemId}
+        aria-labelledby={rest["aria-label"] ? undefined : `item-${itemId}-title`}
+        aria-describedby={rest["aria-label"] ? undefined : `item-${itemId}-desc`}
         onMouseEnter={() => setHover(itemId)}
         onMouseLeave={() => setHover(null)}
         onFocus={() => setHover(itemId)}

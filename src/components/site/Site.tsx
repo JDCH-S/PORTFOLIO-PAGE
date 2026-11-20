@@ -15,6 +15,9 @@ import MobileLayout from "./MobileLayout";
 import Emergence from "./Emergence";
 import CoreButton from "./CoreButton";
 import BootHeader from "./BootHeader";
+import MenuCallouts from "./MenuCallouts";
+import NavSync from "./NavSync";
+import SkipLink from "./SkipLink";
 
 const noop = () => () => {};
 // the animation engine (with drag + layout) loads after the first paint; `m` components render statically until then
@@ -38,7 +41,7 @@ export default function Site() {
   return (
     <LazyMotion features={loadFeatures} strict>
       <MotionConfig reducedMotion="user">
-        <main className="relative">
+        <div className="relative">
           <Grid />
           {/* the renderer gives its canvas pointer-events: auto inline; nothing in this layer may take a tap */}
           <div className={`pointer-events-none fixed inset-0 mix-blend-screen [&_*]:pointer-events-none! ${layer}`} aria-hidden>
@@ -52,13 +55,19 @@ export default function Site() {
               <Emergence desktop={isDesktop} />
               <SphereLean />
               <FragmentStream />
-              <CoreButton coarse={!isDesktop} />
+              <SkipLink />
+              {/* the sphere and, on desktop, the sections around it: Tab goes sphere, then sections, then the page */}
+              <section aria-label="Hologram">
+                <CoreButton coarse={!isDesktop} />
+                {isDesktop ? <MenuCallouts /> : null}
+              </section>
               {/* the page is inert during the load sequence and while the detail dialog is open */}
               <div inert={phase !== "idle"}>{isDesktop ? <DesktopLayout /> : <MobileLayout />}</div>
               <DetailView />
+              <NavSync />
             </>
           ) : null}
-        </main>
+        </div>
       </MotionConfig>
     </LazyMotion>
   );

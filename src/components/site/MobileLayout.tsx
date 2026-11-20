@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { animate, m, useMotionValue, type PanInfo } from "framer-motion";
-import { aboutEntry, modules, profile } from "@/content/content";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { animate, m, useMotionValue, useMotionValueEvent, type PanInfo } from "framer-motion";
+import { profile, sectionIds, sections } from "@/content/content";
 import type { ModuleId } from "@/content/types";
 import { useSiteStore } from "@/store/siteStore";
 import { useSphereStore } from "@/components/sphere/sphereStore";
 import { useReducedMotion } from "@/lib/useMediaQuery";
+import { HOME, home, navLink, openSection, up } from "@/lib/nav";
+import { rovingKeys } from "@/lib/roving";
 import Decode from "@/components/ui/Decode";
 import Telemetry from "@/components/hud/Telemetry";
 import ProjectsModule from "@/components/modules/ProjectsModule";
@@ -15,9 +17,8 @@ import SkillsModule from "@/components/modules/SkillsModule";
 import SystemsModule from "@/components/modules/SystemsModule";
 import AboutModule from "@/components/modules/AboutModule";
 import OptionRow from "./OptionRow";
-import { rovingKeys } from "@/lib/roving";
+import ThumbLine, { THUMB_LINE_HEIGHT } from "./ThumbLine";
 
-const ORDER: ModuleId[] = ["projects", "agents", "skills", "systems", "about"];
 const PANES: Record<ModuleId, React.ComponentType<{ className?: string; compact?: boolean }>> = {
   projects: ProjectsModule,
   agents: AgentsModule,
@@ -25,30 +26,41 @@ const PANES: Record<ModuleId, React.ComponentType<{ className?: string; compact?
   systems: SystemsModule,
   about: AboutModule,
 };
-const TABS = [...modules.map((m) => ({ id: m.id as ModuleId, index: m.index, title: m.title })), { id: aboutEntry.id as ModuleId, index: aboutEntry.index, title: aboutEntry.title }];
+const N = sectionIds.length;
 const EMBLEM = 40;
+/** how much of the next section shows at the right edge: a hint that the panes swipe */
+const PEEK = 12;
 const SPRING = { type: "spring", stiffness: 300, damping: 34 } as const;
+const LANDSCAPE = "[@media(orientation:landscape)_and_(max-height:500px)]";
 
 /**
- * Mobile. Core: the name over the hologram. Menu: a compact sphere with the three options
- * listed under it. Module: the sphere shrinks into the sticky header's emblem on scroll,
- * one module at a time in swipeable tabs. The detail view is a bottom sheet.
+ * Mobile. Home: the name over the hologram. Sections: a compact sphere with the five
+ * sections listed under it on a spine, and a way back in the thumb zone. A section: the
+ * sphere docks into the sticky header as you scroll, one section at a time in swipeable
+ * tabs, with "‹ sections" and prev/next in the thumb zone. An item is a bottom sheet.
  */
 export default function MobileLayout() {
   const step = useSiteStore((s) => s.step);
   const phase = useSiteStore((s) => s.phase);
   const view = useSiteStore((s) => s.view);
   const active = useSiteStore((s) => s.activeModule);
-  const setActive = useSiteStore((s) => s.setActiveModule);
+  const lastModule = useSiteStore((s) => s.lastModule);
   const reduced = useReducedMotion();
   const hero = useRef<HTMLDivElement>(null);
   const header = useRef<HTMLElement>(null);
-  const emblem = useRef<HTMLDivElement>(null);
+  const tabs = useRef<HTMLElement>(null);
+  const rule = useRef<HTMLSpanElement>(null);
   const track = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
+  const panes = useRef<Partial<Record<ModuleId, HTMLDivElement | null>>>({});
+  const [trackWidth, setTrackWidth] = useState(0);
+  const [paneHeight, setPaneHeight] = useState<number | null>(null);
   const x = useMotionValue(0);
   // a mouse drag on the strip must not end as a click on the card it started on
   const dragging = useRef(false);
+
+  const paneW = Math.max(0, trackWidth - PEEK);
+  const index = sectionIds.indexOf(active);
+  const xFor = useCallback((i: number) => (i >= N - 1 ? -(N - 1) * paneW + PEEK : -i * paneW), [paneW]);
 
   // sphere framing per view
   useEffect(() => {
@@ -68,17 +80,22 @@ export default function MobileLayout() {
         sphere.setFrame({ x: hr.left + hr.width / 2, y: hr.top + hr.height / 2, size: heroSize });
         return;
       }
-      // module view: interpolate into the header emblem while the hero passes under the header
-      const e = emblem.current;
-      if (!e) return;
-      const er = e.getBoundingClientRect();
-      const top = header.current?.getBoundingClientRect().bottom ?? 0;
+      // section view: dock into the header emblem while the hero passes under the header
+      const head = header.current;
+      if (!head) return;
+      const er = head.getBoundingClientRect();
+      const safeTop = parseFloat(getComputedStyle(head).paddingTop) || 0;
+      // where the emblem's centre ends up once it is fully open (computed from the header, not the emblem, so no feedback loop)
+      const ex = er.left + 16 + EMBLEM / 2;
+      const ey = er.top + safeTop + 8 + EMBLEM / 2;
+      const top = er.bottom;
       const span = Math.max(1, hr.height);
-      const p = Math.min(1, Math.max(0, (top - hr.top) / span));
+      const p = hr.height <= 1 ? 1 : Math.min(1, Math.max(0, (top - hr.top) / span));
       const t = 1 - Math.pow(1 - p, 2);
+      head.style.setProperty("--dock", t.toFixed(3));
       sphere.setFrame({
-        x: hr.left + hr.width / 2 + (er.left + er.width / 2 - (hr.left + hr.width / 2)) * t,
-        y: hr.top + hr.height / 2 + (er.top + er.height / 2 - (hr.top + hr.height / 2)) * t,
+        x: hr.left + hr.width / 2 + (ex - (hr.left + hr.width / 2)) * t,
+        y: hr.top + hr.height / 2 + (ey - (hr.top + hr.height / 2)) * t,
         size: heroSize + (EMBLEM - heroSize) * t,
         // until it has docked, the touch target stops at the header's edge so the tabs stay tappable
         clipTop: p < 1 ? top : 0,
@@ -103,46 +120,100 @@ export default function MobileLayout() {
     };
   }, [phase, view]);
 
-  const index = ORDER.indexOf(active);
-  // one pane = the track's width (ResizeObserver reports once on observe, then on every change)
+  // one pane = the track's width minus the peek
   useEffect(() => {
     const t = track.current;
     if (view !== "module" || !t) return;
-    const ro = new ResizeObserver(() => setWidth(t.clientWidth));
+    const ro = new ResizeObserver(() => setTrackWidth(t.clientWidth));
     ro.observe(t);
     return () => ro.disconnect();
   }, [view]);
-  // the strip follows the active tab; a swipe that changes nothing springs back
+
+  // the track is as tall as the open section, so a short one leaves no empty page below it
   useEffect(() => {
-    if (view !== "module") return;
-    const c = animate(x, -index * width, reduced ? { duration: 0 } : SPRING);
+    const el = panes.current[active];
+    if (view !== "module" || !el) return;
+    const ro = new ResizeObserver(() => setPaneHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [active, view]);
+
+  // the strip follows the active section; a swipe that changes nothing springs back
+  useEffect(() => {
+    if (view !== "module" || !paneW) return;
+    const c = animate(x, xFor(index), reduced ? { duration: 0 } : SPRING);
     return () => c.stop();
-  }, [index, width, view, reduced, x]);
-  // keep the active tab visible in the scrollable strip
+  }, [index, paneW, view, reduced, x, xFor]);
+
+  // the gold rule under the tabs slides with the strip, under the finger during a swipe
+  const placeRule = useCallback(
+    (v: number) => {
+      const nav = tabs.current;
+      const el = rule.current;
+      if (!nav || !el || !paneW) return;
+      const last = xFor(N - 1);
+      const p = Math.min(N - 1, Math.max(0, last ? ((N - 1) * v) / last : 0));
+      const a = Math.floor(p);
+      const b = Math.min(N - 1, a + 1);
+      const f = p - a;
+      const ta = nav.querySelector<HTMLElement>(`[data-tab="${sectionIds[a]}"]`);
+      const tb = nav.querySelector<HTMLElement>(`[data-tab="${sectionIds[b]}"]`);
+      if (!ta || !tb) return;
+      el.style.left = `${ta.offsetLeft + (tb.offsetLeft - ta.offsetLeft) * f}px`;
+      el.style.width = `${ta.offsetWidth + (tb.offsetWidth - ta.offsetWidth) * f}px`;
+    },
+    [paneW, xFor],
+  );
+  useMotionValueEvent(x, "change", placeRule);
+  useLayoutEffect(() => placeRule(x.get()), [placeRule, x, view, trackWidth]);
+
+  // keep the active tab visible in the strip
   useEffect(() => {
     if (view !== "module") return;
     document.querySelector<HTMLElement>(`[data-tab="${active}"]`)?.scrollIntoView({ inline: "center", block: "nearest", behavior: reduced ? "auto" : "smooth" });
   }, [active, view, reduced]);
+
+  // after switching section deep in a long one, bring the new section's title up under the header
+  const shownSection = useRef(active);
+  useEffect(() => {
+    if (view !== "module") {
+      shownSection.current = active;
+      return;
+    }
+    if (shownSection.current === active) return;
+    shownSection.current = active;
+    const t = track.current;
+    const head = header.current;
+    if (!t || !head) return;
+    const target = window.scrollY + t.getBoundingClientRect().top - head.getBoundingClientRect().bottom - 8;
+    if (target < window.scrollY) window.scrollTo({ top: Math.max(0, target), behavior: reduced ? "auto" : "smooth" });
+  }, [active, view, reduced]);
+
   const go = useCallback(
     (i: number) => {
-      const next = ORDER[Math.min(ORDER.length - 1, Math.max(0, i))];
-      setActive(next);
+      const next = sectionIds[Math.min(N - 1, Math.max(0, i))];
+      if (next === active) return;
       useSphereStore.getState().pulseToward(i > index ? 1 : -1, 0, 0.4);
+      openSection(next);
     },
-    [index, setActive],
+    [active, index],
   );
   const onDragEnd = (_: unknown, info: PanInfo) => {
-    if (!width) return;
-    const target = Math.max(0, Math.min(ORDER.length - 1, Math.round((-x.get() - info.velocity.x * 0.15) / width)));
-    if (target === index) animate(x, -index * width, reduced ? { duration: 0 } : SPRING);
-    else go(target);
     window.setTimeout(() => {
       dragging.current = false;
     }, 0);
+    if (!paneW) return;
+    const dx = x.get() - xFor(index);
+    const vx = info.velocity.x;
+    const delta = dx < -0.22 * paneW || vx < -350 ? 1 : dx > 0.22 * paneW || vx > 350 ? -1 : 0;
+    const target = Math.max(0, Math.min(N - 1, index + delta));
+    if (target === index) animate(x, xFor(index), reduced ? { duration: 0 } : SPRING);
+    else go(target);
   };
 
-  const nameBlock = (size: "lg" | "sm") => (
-    <div className="min-w-0 flex-1">
+  // the name is the way home from anywhere but home
+  const nameBlock = (size: "lg" | "sm") => {
+    const title = (
       <Decode
         as="h1"
         text={profile.name.toUpperCase()}
@@ -150,9 +221,21 @@ export default function MobileLayout() {
         reduced={reduced}
         className={`truncate font-display font-semibold tracking-[0.06em] text-gold-hot ${size === "lg" ? "text-[17px] leading-[22px]" : "text-[15px] leading-[20px]"}`}
       />
-      <p className="label truncate text-steel">{profile.role}</p>
-    </div>
-  );
+    );
+    return (
+      <div className="min-w-0 flex-1">
+        {view === "core" ? (
+          title
+        ) : (
+          <a {...navLink(HOME, home)} aria-label={`${profile.name}, home`} className="group relative block w-fit max-w-full outline-none">
+            {title}
+            <span aria-hidden className="absolute -bottom-0.5 left-0 h-px w-full bg-gold opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100" />
+          </a>
+        )}
+        <p className="label truncate text-steel">{profile.role}</p>
+      </div>
+    );
+  };
 
   if (view === "core") {
     return (
@@ -160,6 +243,7 @@ export default function MobileLayout() {
         <header className="px-4 transition-opacity duration-[480ms]" style={{ opacity: step >= 2 ? 1 : 0.35, paddingTop: "calc(12px + env(safe-area-inset-top, 0px))" }}>
           {nameBlock("lg")}
         </header>
+        <main id="content" aria-label="Home" />
       </div>
     );
   }
@@ -170,104 +254,137 @@ export default function MobileLayout() {
         <header className="px-4" style={{ paddingTop: "calc(12px + env(safe-area-inset-top, 0px))" }}>
           {nameBlock("lg")}
         </header>
-        <div className="flex min-h-0 flex-1 flex-col [@media(orientation:landscape)_and_(max-height:500px)]:flex-row [@media(orientation:landscape)_and_(max-height:500px)]:items-center">
-          <div ref={hero} aria-hidden className="min-h-0 flex-1 [@media(orientation:landscape)_and_(max-height:500px)]:h-full" />
+        <main id="content" className={`flex min-h-0 flex-1 flex-col ${LANDSCAPE}:flex-row ${LANDSCAPE}:items-center`}>
+          <div ref={hero} aria-hidden className={`min-h-0 flex-1 ${LANDSCAPE}:h-full`} />
           <nav
-            aria-label="Modules"
-            onKeyDown={rovingKeys("button[data-option]")}
-            className="relative flex flex-col gap-0.5 px-4 pt-6 sm:mx-auto sm:w-[min(100%,440px)] [@media(orientation:landscape)_and_(max-height:500px)]:w-[min(46%,320px)] [@media(orientation:landscape)_and_(max-height:500px)]:justify-center [@media(orientation:landscape)_and_(max-height:500px)]:pt-0"
-            style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}
+            id="sections-list"
+            aria-label="Sections"
+            onKeyDown={rovingKeys("[data-option], [data-up]")}
+            className={`relative flex flex-col px-4 pt-5 sm:mx-auto sm:w-[min(100%,440px)] ${LANDSCAPE}:w-[min(46%,320px)] ${LANDSCAPE}:justify-center ${LANDSCAPE}:pt-0`}
+            style={{ paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))" }}
           >
-          {/* spine: down from the sphere, through the option shards */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute -top-16 left-1/2 w-px bg-gradient-to-b from-transparent via-gold-line to-gold-line transition-opacity duration-[480ms] [@media(orientation:landscape)_and_(max-height:500px)]:hidden"
-            style={{ bottom: "calc(38px + env(safe-area-inset-bottom, 0px))", opacity: step >= 4 ? 1 : 0 }}
-          />
-          {modules.map((m, i) => (
-            <OptionRow key={m.id} layout="spine" id={m.id} index={m.index} title={m.title} count={m.items.length} order={i} />
-          ))}
-          <OptionRow layout="spine" id="about" index={aboutEntry.index} title={aboutEntry.title} order={modules.length} muted />
+            {/* spine: down from the sphere, through the section shards, ending on "close" */}
+            <span
+              aria-hidden
+              className={`pointer-events-none absolute -top-16 left-1/2 w-px bg-gradient-to-b from-transparent via-gold-line to-gold-line transition-opacity duration-[480ms] ${LANDSCAPE}:hidden`}
+              style={{ bottom: "calc(30px + env(safe-area-inset-bottom, 0px))", opacity: step >= 4 ? 1 : 0 }}
+            />
+            {sections.map((s, i) => (
+              <OptionRow key={s.id} layout="spine" id={s.id} index={s.index} title={s.title} hint={s.hint} count={s.count} order={i} lit={s.id === lastModule} />
+            ))}
+            {/* the visible way back, where the thumb is */}
+            <a
+              {...navLink(HOME, up)}
+              data-up
+              className={`group mt-1 grid min-h-11 grid-cols-[1fr_auto_1fr] items-center gap-3 outline-none transition-opacity duration-[480ms] ${step >= 4 ? "opacity-100" : "opacity-0"}`}
+            >
+              <span />
+              <span aria-hidden className="h-[7px] w-[7px] rounded-full border border-gold-line bg-bg group-hover:border-gold-hot group-focus-visible:border-gold-hot" />
+              <span className="label text-steel group-hover:text-gold-hot group-focus-visible:text-gold-hot group-active:text-gold-hot">× close</span>
+            </a>
           </nav>
-        </div>
+        </main>
       </div>
     );
   }
 
   return (
     <div className="relative z-10 min-h-dvh">
-      {/* sticky header: emblem + name + tabs */}
+      {/* sticky header: emblem (opens as the sphere docks) + name + tabs */}
       <header ref={header} className="glass-solid sticky top-0 z-20 border-b border-steel-line" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
-        <div className="flex items-center gap-3 px-4 py-2">
-          <div ref={emblem} data-emblem aria-hidden className="h-10 w-10 shrink-0" />
+        <div className="flex items-center px-4 py-2">
+          <div data-emblem aria-hidden className="h-10 shrink-0" style={{ width: `calc(var(--dock, 0) * ${EMBLEM}px)`, marginRight: "calc(var(--dock, 0) * 12px)" }} />
           {nameBlock("sm")}
         </div>
-        <nav aria-label="Modules" className="flex overflow-x-auto border-t border-steel-line [mask-image:linear-gradient(90deg,transparent,#000_10px,#000_calc(100%-10px),transparent)] [scrollbar-width:none]">
-          {TABS.map((m, i) => {
-            const on = m.id === active;
+        <nav
+          ref={tabs}
+          aria-label="Sections"
+          onKeyDown={rovingKeys("[data-tab]")}
+          className="relative flex overflow-x-auto border-t border-steel-line px-2.5 [mask-image:linear-gradient(90deg,transparent,#000_10px,#000_calc(100%-10px),transparent)] [scrollbar-width:none]"
+        >
+          {sections.map((s, i) => {
+            const on = s.id === active;
+            const link = navLink({ depth: 2, section: s.id }, () => go(i));
             return (
-              <button
-                key={m.id}
-                type="button"
-                data-tab={m.id}
-                aria-label={m.title}
-                aria-current={on ? "true" : undefined}
-                onClick={() => go(i)}
-                className={`label flex h-11 flex-1 items-center justify-center gap-1.5 border-b-2 px-2 whitespace-nowrap transition-colors max-[374px]:px-1 max-[374px]:tracking-[0.12em]! ${on ? "border-gold text-gold-hot" : "border-transparent text-steel"}`}
+              <a
+                key={s.id}
+                href={link.href}
+                data-tab={s.id}
+                aria-label={s.title}
+                aria-current={on ? "page" : undefined}
+                onClick={(e) => {
+                  if (on) {
+                    // already here: bring this section's title up under the header
+                    e.preventDefault();
+                    const t = track.current;
+                    const head = header.current;
+                    if (t && head) window.scrollTo({ top: Math.max(0, window.scrollY + t.getBoundingClientRect().top - head.getBoundingClientRect().bottom - 8), behavior: reduced ? "auto" : "smooth" });
+                    return;
+                  }
+                  link.onClick(e);
+                }}
+                className={`label flex h-11 flex-1 items-center justify-center gap-1.5 px-2 whitespace-nowrap transition-colors max-[374px]:px-1 max-[374px]:tracking-[0.1em]! ${on ? "text-gold-hot" : "text-steel"}`}
               >
-                <span className="hidden text-steel-dim min-[490px]:inline">{m.index}</span>
-                {m.title}
-              </button>
+                <span className="hidden text-steel-dim min-[490px]:inline">{s.index}</span>
+                {s.title}
+              </a>
             );
           })}
+          <span ref={rule} aria-hidden className="pointer-events-none absolute bottom-0 h-0.5 bg-gold shadow-[0_0_8px_var(--gold)]" />
         </nav>
       </header>
 
-      {/* hero: the sphere sits here and shrinks into the emblem on scroll */}
-      <div aria-hidden className="relative" style={{ height: "min(56vw, 320px, 60vh)" }}>
-        <div ref={hero} className="absolute inset-x-0 top-0 h-full" />
-      </div>
+      <main id="content">
+        {/* hero: the sphere sits here and shrinks into the emblem on scroll (none in short landscape) */}
+        <div aria-hidden className={`relative h-[min(56vw,320px,60vh)] ${LANDSCAPE}:h-0`}>
+          <div ref={hero} className="absolute inset-x-0 top-0 h-full" />
+        </div>
 
-      {/* swipeable tabs (the track has no padding, so its width is one pane) */}
-      <div ref={track} className="mx-4 overflow-hidden pb-6">
-        <m.div
-          className="flex"
-          drag="x"
-          dragConstraints={{ left: -(ORDER.length - 1) * width, right: 0 }}
-          dragElastic={0.2}
-          dragMomentum={false}
-          onDragStart={() => {
-            dragging.current = true;
-          }}
-          onDragEnd={onDragEnd}
-          onClickCapture={(e) => {
-            if (dragging.current) {
-              e.preventDefault();
-              e.stopPropagation();
-            }
-          }}
-          style={{ width: `${ORDER.length * 100}%`, x }}
-        >
-          {ORDER.map((id) => {
-            const Pane = PANES[id];
-            return (
-              <div
-                key={id}
-                className={`shrink-0 pr-4 ${active !== id ? "[content-visibility:auto] [contain-intrinsic-size:0_800px]" : ""}`}
-                style={{ width: `${100 / ORDER.length}%` }}
-                aria-hidden={active !== id}
-                inert={active !== id}
-              >
-                <Pane compact />
-              </div>
-            );
-          })}
-        </m.div>
-      </div>
+        {/* swipeable sections (the track has no padding, so its width is one pane plus the peek) */}
+        <div ref={track} className="mx-4 overflow-hidden" style={{ height: paneHeight ?? undefined }}>
+          <m.div
+            className="flex items-start"
+            drag="x"
+            dragConstraints={{ left: xFor(N - 1), right: 0 }}
+            dragElastic={0.2}
+            dragMomentum={false}
+            onDragStart={() => {
+              dragging.current = true;
+            }}
+            onDragEnd={onDragEnd}
+            onClickCapture={(e) => {
+              if (dragging.current) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+            style={{ width: paneW ? N * paneW : `${N * 100}%`, x }}
+          >
+            {sectionIds.map((id) => {
+              const Pane = PANES[id];
+              return (
+                <div
+                  key={id}
+                  ref={(el) => {
+                    panes.current[id] = el;
+                  }}
+                  className={`shrink-0 pr-3 pb-6 ${active !== id ? "[content-visibility:auto] [contain-intrinsic-size:0_800px]" : ""}`}
+                  style={{ width: paneW || `${100 / N}%` }}
+                  aria-hidden={active !== id}
+                  inert={active !== id}
+                >
+                  <Pane compact />
+                </div>
+              );
+            })}
+          </m.div>
+        </div>
+      </main>
 
-      <footer className="border-t border-steel-line px-4 py-3" style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))" }}>
+      <footer className="border-t border-steel-line px-4 pt-3" style={{ paddingBottom: `calc(${THUMB_LINE_HEIGHT + 12}px + env(safe-area-inset-bottom, 0px))` }}>
         <Telemetry />
       </footer>
+      <ThumbLine />
     </div>
   );
 }
