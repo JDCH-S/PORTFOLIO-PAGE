@@ -95,7 +95,9 @@ worker. **copy settings JSON** puts the current values on the clipboard.
   depth surface whose width and brightness follow the tone like a line engraving, radial meridians
   and diagonals that turn the cheeks and forehead into a wireframe mesh, evenly spaced strands for
   hair and brows, stubble ticks for the beard, landmark lines for lids, iris and lips, edge ridges,
-  a faint back-of-head shell for turned views, dust / neck-dissolve / node particles. Every point
+  a faint back-of-head shell for turned views, a short slim neck (about 0.4 of the face width,
+  shaded like a cylinder, breaking into dashes along a U-shaped line under the beard), dust /
+  neck-dissolve / node particles. Every point
   is packed into a 32-byte record (vertex pulling from an RGBA32UI texture), with precomputed
   horizon angles so the relief occludes itself without a depth buffer.
 - **Worker** (`hologram.worker.ts`, started by `createWorker.ts`): fetches and decodes the maps once
@@ -118,7 +120,9 @@ worker. **copy settings JSON** puts the current values on the clipboard.
 - `SphereStage.tsx` picks a tier (`src/lib/tier.ts`), lazy-loads the scene client-side, and shows
   the static poster (`public/sphere-static.webp`, a real front capture of the hologram on black,
   blended with `screen`) until the head is built and rendering, for `prefers-reduced-motion`, and
-  when WebGL2 is unavailable or the maps fail to load.
+  when WebGL2 is unavailable or the maps fail to load. Recapture the poster after any change to the
+  head: `/sphere?capture&freeze&t=4&tier=high` at 1200x1200 on a pure black page, and
+  `sphere-static-600.webp` as a Lanczos downsample of it.
 - `SphereScene.tsx` compiles the shaders and waits for the built head before starting the render
   loop (frames rendered into the hidden canvas while the worker builds only queue GPU work: on
   software GL that stalled the first head frame by 13-50 s), flips readiness (which

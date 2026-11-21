@@ -345,11 +345,16 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
   ptGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 3);
   const ptMat = new THREE.ShaderMaterial({
     ...additive,
-    uniforms: { ...colors, ...common, uMerLod: filMat.uniforms.uMerLod, uNode: { value: dbg('gnode', 1.0) } },
+    uniforms: {
+      ...colors, ...common, uMerLod: filMat.uniforms.uMerLod, uNode: { value: dbg('gnode', 1.0) },
+      // neck dust: (axis world x, how far it is drawn in toward the axis by the end of its fall, fall length scale)
+      uNeck: { value: new THREE.Vector3(info.neckX, dbg('neckin', 0.12), dbg('neckfall', 0.5)) },
+    },
     vertexShader: /* glsl */ `
       attribute vec4 aInfo;
       attribute vec4 aHor;
       uniform float uTime, uConverge, uAssemble, uIgnite, uPxWorldPerDist, uDpr, uPulse, uMerLod, uNode, uSS;
+      uniform vec3 uNeck;
       ${GLSL_VIS}
       varying float vA, vHot;
       void main() {
@@ -370,8 +375,9 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
           a *= 1.0 - 0.8 * inFace;
         } else if (kind < 1.5) {
           float ph = fract(uTime * (0.05 + 0.06 * aInfo.y) + aInfo.z);
-          p.y -= ph * (0.035 + 0.045 * aInfo.z);
-          p.x += 0.012 * sin(uTime * 0.7 + aInfo.y * 20.0) * ph;
+          // neck dust falls a short way and is drawn in toward the neck's axis as it goes (no skirt below the column)
+          p.y -= ph * (0.035 + 0.045 * aInfo.z) * uNeck.z;
+          p.x += 0.012 * sin(uTime * 0.7 + aInfo.y * 20.0) * ph + (uNeck.x - position.x) * uNeck.y * ph;
           vec3 from = position * (2.0 + aInfo.y);
           p = mix(from, p, smoothstep(0.0, 1.0, uConverge));
           size = 0.003 + 0.0045 * aInfo.z;
