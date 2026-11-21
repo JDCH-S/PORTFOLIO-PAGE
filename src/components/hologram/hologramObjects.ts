@@ -395,9 +395,10 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         float px = size * length(modelViewMatrix[0].xyz) / (uPxWorldPerDist * max(-mv.z, 0.05)) * uDpr;
         float drawn = max(px, 1.6 * uSS);
         vA = a * (px * px) / (drawn * drawn) * (0.4 + 0.6 * uIgnite) * (1.0 + 0.5 * uPulse);
-        if (kind > 8.5) vA = 0.0;
         gl_PointSize = drawn;
         gl_Position = projectionMatrix * mv;
+        // parked neck dust (kind 9) is never drawn: moved outside the clip volume so it rasterizes no fragments
+        if (kind > 8.5) { vA = 0.0; gl_PointSize = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uBase, uHot;

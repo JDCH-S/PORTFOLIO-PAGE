@@ -326,11 +326,18 @@ export function buildFaceGeometry(input: BuildInput): BuildOutput {
   // The neck: a short, slim column under the jaw that dissolves before any shoulders. Its shape is a small set of
   // knobs: hw (half width at mid-neck), soft (width of the side ramp of the dissolve), flare/flareL (extra half width
   // right under the jaw line, easing out over flareL px: the column curves out into the jaw instead of meeting it at a
-  // right angle), u (how much earlier the sides end than the centre: a U-shaped bottom instead of a flat cut).
-  type NeckShape = { cx: number; hw: number; y0: number; side: number; sig: number; hold: number; soft: number; flare: number; flareL: number; u: number };
+  // right angle), u (how much earlier the sides end than the centre: a U-shaped bottom instead of a flat cut), spread
+  // (extra half width gained on the way down to the dissolve: a real neck widens a little toward the shoulders, so the
+  // column must not narrow into a funnel / goatee point as it fades).
+  type NeckShape = { cx: number; hw: number; y0: number; side: number; sig: number; hold: number; soft: number; flare: number; flareL: number; u: number; spread: number };
   const mkNeck = (s: NeckShape) => {
     const start = (x: number) => Math.min(s.y0, polyY(JAW, x) + s.side);
-    const hwAt = (x: number, y: number) => (s.flare > 0 ? s.hw + s.flare * (1 - smooth(0, s.flareL, y - polyY(JAW, x))) : s.hw);
+    const hwAt = (x: number, y: number) => {
+      let hw = s.hw;
+      if (s.flare > 0) hw += s.flare * (1 - smooth(0, s.flareL, y - polyY(JAW, x)));
+      if (s.spread > 0) hw += s.spread * smooth(0, s.hold + s.sig, y - start(x));
+      return hw;
+    };
     // the line where the dissolve starts (U-shaped when u > 0)
     const y1 = (x: number) => start(x) + s.hold - s.u * Math.min(1, ((x - s.cx) / s.hw) ** 2);
     const w = (x: number, y: number) => {
@@ -345,16 +352,18 @@ export function buildFaceGeometry(input: BuildInput): BuildOutput {
   // numbers the beard stubble and the neck dust consume, so the shared rng stream (and with it every stubble tick,
   // network node and glint on the face) stays where it is whatever the visible neck looks like. Never tune it, and
   // keep it out of dbg(): changing it moves detail above the jaw.
-  const NECK_REF: NeckShape = { cx: 318, hw: 124, y0: chinY + 4, side: 26, sig: 42, hold: 58, soft: 50, flare: 0, flareL: 1, u: 0 };
+  const NECK_REF: NeckShape = { cx: 318, hw: 124, y0: chinY + 4, side: 26, sig: 42, hold: 58, soft: 50, flare: 0, flareL: 1, u: 0, spread: 0 };
   const neckRef = mkNeck(NECK_REF);
   // the visible neck: ~0.4 of the face width (the photo's neck runs into the T-shirt collar and trapezius, so copying
-  // its mask gave a pillar), soft sides, a short fillet into the jaw, a U-shaped dissolve before any shoulders
+  // its mask gave a pillar), soft sides, a short fillet into the jaw, near-parallel sides that widen a touch on the way
+  // down (a strong U or flare made it narrow into a funnel / goatee point), a gentle U-shaped dissolve
   const NECK = mkNeck({
-    cx: dbg('neckcx', NECK_REF.cx), hw: dbg('neckhw', 105), y0: chinY + dbg('collar', 4), side: dbg('neckside', NECK_REF.side),
-    sig: dbg('necksig', 34), hold: dbg('neckhold', 55), soft: dbg('necksoft', 80),
-    flare: dbg('neckflare', 15), flareL: Math.max(1, dbg('neckflarel', 25)), u: dbg('necku', 80),
+    cx: dbg('neckcx', NECK_REF.cx), hw: dbg('neckhw', 100), y0: chinY + dbg('collar', 4), side: dbg('neckside', NECK_REF.side),
+    sig: dbg('necksig', 34), hold: dbg('neckhold', 55), soft: dbg('necksoft', 60),
+    flare: dbg('neckflare', 6), flareL: Math.max(1, dbg('neckflarel', 25)), u: dbg('necku', 35),
+    spread: dbg('neckspread', 10),
   });
-  const NECK_DIM = dbg('neckdim', 0.35), NECK_EDGE = dbg('neckedge', 0.15), NECK_CYL = dbg('neckcyl', 2), NECK_FADE = dbg('neckfade', 0.5);
+  const NECK_DIM = dbg('neckdim', 0.35), NECK_EDGE = dbg('neckedge', 0.28), NECK_CYL = dbg('neckcyl', 2), NECK_FADE = dbg('neckfade', 0.3);
   // neck brightness: below the jaw the neck is ~65 % of the face's filament brightness on its centre line
   const neckBright = (x: number, y: number) => {
     const s0 = NECK.start(x);

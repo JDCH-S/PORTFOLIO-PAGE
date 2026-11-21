@@ -96,7 +96,8 @@ worker. **copy settings JSON** puts the current values on the clipboard.
   and diagonals that turn the cheeks and forehead into a wireframe mesh, evenly spaced strands for
   hair and brows, stubble ticks for the beard, landmark lines for lids, iris and lips, edge ridges,
   a faint back-of-head shell for turned views, a short slim neck (about 0.4 of the face width,
-  shaded like a cylinder, breaking into dashes along a U-shaped line under the beard), dust /
+  shaded like a cylinder, with near-parallel sides that widen a touch before it breaks into dashes
+  along a gentle U-shaped line under the beard: never a funnel or point), dust /
   neck-dissolve / node particles. Every point
   is packed into a 32-byte record (vertex pulling from an RGBA32UI texture), with precomputed
   horizon angles so the relief occludes itself without a depth buffer.
