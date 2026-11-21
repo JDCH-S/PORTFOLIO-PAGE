@@ -4,7 +4,9 @@ Component structure and design tokens for the portfolio. Phase 3 builds exactly 
 The hologram is the source of every visual decision below: the UI must look like it was
 emitted by it. (Phase 1 approved a golden sphere; it has since been replaced by a holographic
 portrait of the owner, his face measured from a photograph and drawn in golden filaments, in the
-same palette, slot and unit circle. "Sphere" in the component names below means that slot.)
+same palette, slot and unit circle: the head and a short neck in the photo's proportions that
+dissolves into gold dust above the collar, with no clothing or shoulders; `?holo.neck=0` ends the
+head at the jaw instead. "Sphere" in the component names below means that slot.)
 
 ## 1. Direction in one paragraph
 

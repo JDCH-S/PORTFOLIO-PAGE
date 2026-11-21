@@ -43,6 +43,7 @@ Useful query parameters while reviewing (they work on `/` and `/sphere`):
 | `?t=8` | start the animation clocks at 8 s (handy for screenshots) |
 | `?capture=1` | hide the panel and caption (used to capture the poster) |
 | `?capture&freeze&t=4` | also stop every clock at `t` and hold the head front-on, still (poster capture) |
+| `?holo.neck=0` | no neck: the head ends at the jaw / beard line in a short fringe of embers (default `1`: the neck) |
 | `?holo.<name>=<value>` | debug overrides of the hologram builder / shaders (e.g. `?holo.gain=1.2`, `?holo.worker=0` builds on the main thread, `?holo.hide=particles`) |
 
 ## How the site is built
@@ -95,9 +96,12 @@ worker. **copy settings JSON** puts the current values on the clipboard.
   depth surface whose width and brightness follow the tone like a line engraving, radial meridians
   and diagonals that turn the cheeks and forehead into a wireframe mesh, evenly spaced strands for
   hair and brows, stubble ticks for the beard, landmark lines for lids, iris and lips, edge ridges,
-  a faint back-of-head shell for turned views, a short slim neck (about 0.4 of the face width,
-  shaded like a cylinder, with near-parallel sides that widen a touch before it breaks into dashes
-  along a gentle U-shaped line under the beard: never a funnel or point), dust /
+  a faint back-of-head shell for turned views, a short neck in the photo's proportions (its outline
+  is the skin mask's under the jaw, about 0.7 of the face width as in the photo, with straight sides
+  that only widen a touch below the chin; shaded as a rounded column from the depth surface, with
+  faint sternocleidomastoid cords and a larynx highlight; it is brightest just under the jaw, fades
+  on the way down and breaks into dashes and dust along the T-shirt collar's U, with no clothing or
+  shoulders; `?holo.neck=0` drops it and ends the head at the jaw in a short fringe of embers), dust /
   neck-dissolve / node particles. Every point
   is packed into a 32-byte record (vertex pulling from an RGBA32UI texture), with precomputed
   horizon angles so the relief occludes itself without a depth buffer.

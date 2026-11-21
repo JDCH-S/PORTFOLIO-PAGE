@@ -323,60 +323,208 @@ export function buildFaceGeometry(input: BuildInput): BuildOutput {
   const seamY = (x: number) => 0.5 * (polyY(SEAM_UP, x) + polyY(SEAM_LO, x));
   const mouthL = LMk[61][0], mouthR = LMk[291][0];
   const JAW = [172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397];
-  // The neck: a short, slim column under the jaw that dissolves before any shoulders. Its shape is a small set of
-  // knobs: hw (half width at mid-neck), soft (width of the side ramp of the dissolve), flare/flareL (extra half width
-  // right under the jaw line, easing out over flareL px: the column curves out into the jaw instead of meeting it at a
-  // right angle), u (how much earlier the sides end than the centre: a U-shaped bottom instead of a flat cut), spread
-  // (extra half width gained on the way down to the dissolve: a real neck widens a little toward the shoulders, so the
-  // column must not narrow into a funnel / goatee point as it fades).
-  type NeckShape = { cx: number; hw: number; y0: number; side: number; sig: number; hold: number; soft: number; flare: number; flareL: number; u: number; spread: number };
-  const mkNeck = (s: NeckShape) => {
-    const start = (x: number) => Math.min(s.y0, polyY(JAW, x) + s.side);
-    const hwAt = (x: number, y: number) => {
-      let hw = s.hw;
-      if (s.flare > 0) hw += s.flare * (1 - smooth(0, s.flareL, y - polyY(JAW, x)));
-      if (s.spread > 0) hw += s.spread * smooth(0, s.hold + s.sig, y - start(x));
-      return hw;
+  // A neck as a set of fields: w (side weight), v (dissolve toward the bottom, 1 above the line y1), k = w * v (the
+  // dissolve key the filaments carry; 1 above the jaw line, so nothing above the jaw depends on the neck)
+  type NeckFns = { cx: number; y1: (x: number) => number; w: (x: number, y: number) => number; v: (y: number, x: number) => number; k: (x: number, y: number) => number };
+  // The neck as first shipped (a slab, a fixed column under the jaw). It is drawn nowhere: it only fixes how many
+  // random numbers the beard stubble and the neck dust consume, so the shared rng stream (and with it every stubble
+  // tick, network node and glint on the face) stays where it is whatever the visible neck looks like. Never tune it,
+  // and keep it out of dbg(): changing it moves detail above the jaw.
+  const neckRef: NeckFns = (() => {
+    const cx = 318, hw = 124, y0 = chinY + 4, side = 26, sig = 42, hold = 58, soft = 50;
+    const y1 = (x: number) => Math.min(y0, polyY(JAW, x) + side) + hold;
+    const w = (x: number, y: number) => (y <= polyY(JAW, x) + 1 ? 1 : 1 - smooth(hw - soft, hw + 6, Math.abs(x - cx)));
+    const v = (y: number, x: number) => { const yy = y1(x); return y < yy ? 1 : Math.exp(-Math.pow((y - yy) / sig, 2)); };
+    return { cx, y1, w, v, k: (x: number, y: number) => w(x, y) * v(y, x) };
+  })();
+  // The visible neck (the default; ?holo.neck=0 drops it) is the photo's own neck: its outline is the skin mask's
+  // under the jaw (scaled by neckws, so it reads ~0.7 of the face width once shaded, as in the photo), it is shaded as
+  // a rounded column (neckBright below) and it ends in the T-shirt collar's U, breaking into dashes and dust there.
+  // No clothing or shoulders.
+  //   neck tables, per row: the mask's 0.5 crossings walking out from the neck axis = left / right edge, read down to
+  //   just under the chin, kept from opening out again below the jaw corners and smoothed down the rows;
+  //   below that the photo's mask is the segmentation's fade, not the neck, so the sides carry on straight down,
+  //   widening a touch (NK_SPREAD px per px) as a real neck does toward its base, instead of closing into a point.
+  //   The bottom is the collar line: a U (flat across the throat, rising toward the sides so the corners round off)
+  //   whose centre is a little below where the mask fades under the throat.
+  const NK_Y0 = Math.max(0, Math.floor(Math.min(LMk[172][1], LMk[397][1]) - 12));
+  const NK_N = H - NK_Y0;
+  const nkL = new Float32Array(NK_N), nkR = new Float32Array(NK_N);
+  const NK_CX = 0.5 * (LMk[172][0] + LMk[397][0]);
+  const NK_SPREAD = dbg('neckspread', 0.12);
+  let nkYC = chinY + 80;
+  {
+    const ms = boxBlur(mask, dbg('neckmblur', 3));
+    const c = Math.round(NK_CX);
+    const kW = Math.min(NK_N - 1, Math.max(0, Math.round(chinY + dbg('neckwrow', 6)) - NK_Y0));
+    let l = c - 100, r = c + 100;
+    for (let k = 0; k <= kW; k++) {
+      const o = (NK_Y0 + k) * W;
+      if (ms[o + c] >= 0.5) {
+        let a = c, b = c;
+        while (a > 0 && ms[o + a - 1] >= 0.5) a--;
+        while (b < W - 1 && ms[o + b + 1] >= 0.5) b++;
+        // sub-pixel crossing
+        l = a - (a > 0 ? (ms[o + a] - 0.5) / Math.max(1e-4, ms[o + a] - ms[o + a - 1]) : 0);
+        r = b + (b < W - 1 ? (ms[o + b] - 0.5) / Math.max(1e-4, ms[o + b] - ms[o + b + 1]) : 0);
+      }
+      nkL[k] = l; nkR[k] = r;
+    }
+    // below the jaw corners the sides only ever close in or run straight on the way down (never a waist that opens
+    // out again where the T-shirt collar notches the mask: that read as a pedestal / lampshade); from the chin down
+    // they widen by NK_SPREAD alone
+    if (dbg('neckmono', 1) > 0.5) {
+      const k0 = Math.max(0, Math.min(kW, Math.round(Math.max(LMk[172][1], LMk[397][1]) + 8) - NK_Y0));
+      for (let k = k0 + 1; k <= kW; k++) { nkL[k] = Math.max(nkL[k], nkL[k - 1]); nkR[k] = Math.min(nkR[k], nkR[k - 1]); }
+      l = nkL[kW]; r = nkR[kW];
+    }
+    for (let k = kW + 1; k < NK_N; k++) { nkL[k] = l; nkR[k] = r; }
+    const er = Math.max(0, Math.round(dbg('neckedgesm', 28)));
+    const sm = (src: Float32Array) => {
+      const out = new Float32Array(NK_N);
+      for (let i = 0; i < NK_N; i++) {
+        let s = 0, q = 0;
+        for (let j = Math.max(0, i - er); j <= Math.min(NK_N - 1, i + er); j++) { s += src[j]; q++; }
+        out[i] = s / q;
+      }
+      return out;
     };
-    // the line where the dissolve starts (U-shaped when u > 0)
-    const y1 = (x: number) => start(x) + s.hold - s.u * Math.min(1, ((x - s.cx) / s.hw) ** 2);
+    nkL.set(sm(nkL)); nkR.set(sm(nkR));
+    // width scale about the axis (1 = the mask's 0.5 line; the cylinder shading darkens the rim, so the visible neck
+    // is narrower than its outline) and the spread below the chin
+    const WS = dbg('neckws', 1.15);
+    for (let k = 0; k < NK_N; k++) {
+      const m = 0.5 * (nkL[k] + nkR[k]), h = 0.5 * (nkR[k] - nkL[k]) * WS + NK_SPREAD * Math.max(0, k - kW);
+      nkL[k] = m - h; nkR[k] = m + h;
+    }
+    // the collar's centre: where the mask under the throat falls through 0.5, lowered by NK_LOW, kept clear of the
+    // end of the mask (no scan filaments are traced where it is ~0)
+    let y5 = Math.round(chinY), y0 = Math.round(chinY);
+    while (y5 < H - 1 && ms[y5 * W + c] >= 0.5) y5++;
+    while (y0 < H - 1 && ms[y0 * W + c] >= 0.1) y0++;
+    nkYC = Math.min(y5 + dbg('necklow', 34), y0 - 8);
+  }
+  const nkRow = (y: number) => Math.min(NK_N - 1, Math.max(0, Math.round(y) - NK_Y0));
+  const NK_SOFT = dbg('necksoft', 26), NK_HOLD = dbg('neckhold', 6), NK_SIG = dbg('necksig', 30);
+  // (the U's rise NK_U and its power NK_UP: deep enough that the bottom corners visibly round off and fray even at the
+  // phone's coarse low-tier scan pitch, instead of a square block with a flat bottom edge; the centre sits a little
+  // lower (necklow) so the neck keeps its full width down past the throat, as the photo's collar U does)
+  const NK_U = dbg('necku', 120), NK_UP = dbg('neckupow', 2), NK_SIGS = dbg('necksigside', 1);
+  const NECK: NeckFns = (() => {
+    const kb = nkRow(nkYC);
+    const cm = 0.5 * (nkL[kb] + nkR[kb]), ch2 = Math.max(40, 0.5 * (nkR[kb] - nkL[kb]));
+    // the dissolve line: the collar's wide U
+    const y1 = (x: number) => nkYC - NK_HOLD - NK_U * Math.pow(Math.min(1, Math.abs(x - cm) / ch2), NK_UP);
     const w = (x: number, y: number) => {
       if (y <= polyY(JAW, x) + 1) return 1;
-      const hw = hwAt(x, y);
-      return 1 - smooth(hw - s.soft, hw + 6, Math.abs(x - s.cx));
+      const k = nkRow(y);
+      const m = 0.5 * (nkL[k] + nkR[k]), h = 0.5 * (nkR[k] - nkL[k]);
+      return 1 - smooth(h - NK_SOFT, h + 3, Math.abs(x - m));
     };
-    const v = (y: number, x: number) => { const y0 = y1(x); return y < y0 ? 1 : Math.exp(-Math.pow((y - y0) / s.sig, 2)); };
-    return { cx: s.cx, start, hwAt, y1, w, v, k: (x: number, y: number) => w(x, y) * v(y, x) };
+    // (the dissolve is longer toward the sides, so the U's outer corners fray out instead of ending square)
+    const v = (y: number, x: number) => {
+      const yy = y1(x);
+      if (y < yy) return 1;
+      const a = Math.min(1, Math.abs(x - cm) / ch2);
+      return Math.exp(-Math.pow((y - yy) / (NK_SIG * (1 + NK_SIGS * a * a)), 2));
+    };
+    return { cx: cm, y1, w, v, k: (x: number, y: number) => w(x, y) * v(y, x) };
+  })();
+  // inside the neck the filaments ignore the mask's own fade (the segmentation's, not the neck's end): the neck's
+  // dissolve is NECK.k alone. Unchanged above the jaw line.
+  const neckMask = (x: number, y: number, mm: number) => (y <= polyY(JAW, x) + 1 ? mm : mm + (1 - mm) * NECK.w(x, y));
+  // neck brightness: NECK_LVL of the filament brightness on the lit centre line, shaded like a rounded neck (a cylinder
+  // across the photo's own width, NECK_EDGE at the rim), lit by the depth surface's normal (light from the front and a
+  // little above: the underside of the jaw turns away a little) and with the photo tone's local contrast raised by
+  // NECK_DET. The photo's own top-to-bottom lighting (a dark band under the chin, a lit lower neck) is divided out
+  // (NECK_FLAT) and replaced by one profile: a little lift right under the jaw (NECK_LIFT, so the neck joins the beard
+  // instead of hanging under a dark band) and a steady fall toward the collar's U (NECK_FADE), so the neck sinks into
+  // the dust instead of ending on a lit band. On top: the sternocleidomastoid cords (from below the ears in and down
+  // toward the sternal notch, lit on the crest, a soft hollow on the inner side) and a faint larynx highlight.
+  const NECK_LVL = dbg('necklvl', 0.72), NECK_EDGE = dbg('neckedge', 0.22), NECK_CYL = dbg('neckcyl', 2);
+  const NECK_NRM = dbg('necknrm', 0.45), NECK_LY = dbg('neckly', 0.35), NECK_LX = dbg('necklx', 0.1), NECK_DET = dbg('neckdet', 0.9);
+  const NECK_FLAT = dbg('neckflat', 1), NECK_LIFT = dbg('necklift', 0.5), NECK_LIFTL = Math.max(1, dbg('neckliftl', 40));
+  const NECK_FADE = dbg('neckfade', 0.6), NECK_FADE0 = dbg('neckfade0', 0), NECK_FADE1 = dbg('neckfade1', 25), NECK_FADEP = dbg('neckfadep', 1.3);
+  const nkZ = boxBlur(depth, dbg('necknr', 5)), nkT = boxBlur(tone, dbg('neckdetr', 9));
+  const nkLn = Math.hypot(NECK_LX, NECK_LY, 1);
+  // the photo tone across the middle half of the neck, per row (smoothed down the rows), and its mean over the neck
+  const nkTr = new Float32Array(NK_N);
+  let nkTref = 0;
+  {
+    const raw = new Float32Array(NK_N);
+    for (let k = 0; k < NK_N; k++) {
+      const m = 0.5 * (nkL[k] + nkR[k]), h = 0.25 * (nkR[k] - nkL[k]);
+      let s = 0, q = 0;
+      for (let x = Math.round(m - h); x <= Math.round(m + h); x += 2) { s += bil(nkT, x, NK_Y0 + k); q++; }
+      raw[k] = s / Math.max(1, q);
+    }
+    const r = 15;
+    for (let i = 0; i < NK_N; i++) {
+      let s = 0, q = 0;
+      for (let j = Math.max(0, i - r); j <= Math.min(NK_N - 1, i + r); j++) { s += raw[j]; q++; }
+      nkTr[i] = s / q;
+    }
+    const ka = nkRow(chinY), kb = nkRow(nkYC);
+    for (let k = ka; k <= kb; k++) nkTref += nkTr[k];
+    nkTref /= Math.max(1, kb - ka + 1);
+  }
+  const SCM_LIT = dbg('neckscmlit', 0.18), SCM_SH = dbg('neckscmsh', 0.5), SCM_W = dbg('neckscmw', 22), SCM_IN = dbg('neckscmin', 30);
+  const SCM_X0 = dbg('neckscmx0', 128), SCM_X1 = dbg('neckscmx1', 26), SCM_Y0 = chinY - 60, SCM_Y1 = chinY + dbg('neckscmy1', 100);
+  const APPLE = dbg('neckapple', 0.15), APPLE_Y = chinY + dbg('neckappley', 45);
+  const neckRelief = (x: number, y: number) => {
+    const t = Math.min(1, Math.max(0, (y - SCM_Y0) / (SCM_Y1 - SCM_Y0)));
+    const d = Math.abs(x - NECK.cx) - (SCM_X0 + (SCM_X1 - SCM_X0) * t); // > 0 outside the cord's crest
+    const along = smooth(SCM_Y0, SCM_Y0 + 40, y) * (1 - smooth(SCM_Y1 - 40, SCM_Y1, y));
+    const cord = SCM_LIT * Math.exp(-Math.pow(d / SCM_W, 2)) - SCM_SH * Math.exp(-Math.pow((d + SCM_IN) / (0.8 * SCM_W), 2));
+    const apple = APPLE * Math.exp(-Math.pow((x - NECK.cx) / 14, 2) - Math.pow((y - APPLE_Y) / 18, 2));
+    return along * cord + apple;
   };
-  // The neck as first shipped (a slab nearly as wide as the jaw). It is drawn nowhere: it only fixes how many random
-  // numbers the beard stubble and the neck dust consume, so the shared rng stream (and with it every stubble tick,
-  // network node and glint on the face) stays where it is whatever the visible neck looks like. Never tune it, and
-  // keep it out of dbg(): changing it moves detail above the jaw.
-  const NECK_REF: NeckShape = { cx: 318, hw: 124, y0: chinY + 4, side: 26, sig: 42, hold: 58, soft: 50, flare: 0, flareL: 1, u: 0, spread: 0 };
-  const neckRef = mkNeck(NECK_REF);
-  // the visible neck: ~0.4 of the face width (the photo's neck runs into the T-shirt collar and trapezius, so copying
-  // its mask gave a pillar), soft sides, a short fillet into the jaw, near-parallel sides that widen a touch on the way
-  // down (a strong U or flare made it narrow into a funnel / goatee point), a gentle U-shaped dissolve
-  const NECK = mkNeck({
-    cx: dbg('neckcx', NECK_REF.cx), hw: dbg('neckhw', 100), y0: chinY + dbg('collar', 4), side: dbg('neckside', NECK_REF.side),
-    sig: dbg('necksig', 34), hold: dbg('neckhold', 55), soft: dbg('necksoft', 60),
-    flare: dbg('neckflare', 6), flareL: Math.max(1, dbg('neckflarel', 25)), u: dbg('necku', 35),
-    spread: dbg('neckspread', 10),
-  });
-  const NECK_DIM = dbg('neckdim', 0.35), NECK_EDGE = dbg('neckedge', 0.28), NECK_CYL = dbg('neckcyl', 2), NECK_FADE = dbg('neckfade', 0.3);
-  // neck brightness: below the jaw the neck is ~65 % of the face's filament brightness on its centre line
   const neckBright = (x: number, y: number) => {
-    const s0 = NECK.start(x);
-    const below = smooth(s0 - 6, s0 + 34, y);
-    // shaded like a cylinder: a bright centre ridge falling off toward the sides (NECK_EDGE at the rim), so the
-    // column reads round instead of an evenly lit slab with two cut edges
-    const u = Math.min(1, Math.abs(x - NECK.cx) / (NECK.hwAt(x, y) + 4));
+    const yj = polyY(JAW, x);
+    if (y <= yj + 1) return 1;
+    const below = smooth(yj + 1, yj + 24, y);
+    const k = nkRow(y);
+    const m = 0.5 * (nkL[k] + nkR[k]), h = 0.5 * (nkR[k] - nkL[k]);
+    const u = Math.min(1, Math.abs(x - m) / (h + 4));
     const cyl = NECK_EDGE + (1 - NECK_EDGE) * Math.pow(1 - u * u, 0.5 * NECK_CYL);
-    // and it fades on the way down, so it recedes into the dissolve instead of ending as a lit slab
-    const fade = NECK_FADE > 0 ? NECK_FADE * smooth(s0, NECK.y1(x) + 20, y) : 0;
-    return 1 - below * (1 - (1 - NECK_DIM) * cyl * (1 - fade));
+    const zx = 0.5 * (bil(nkZ, x + 2, y) - bil(nkZ, x - 2, y)), zy = 0.5 * (bil(nkZ, x, y + 2) - bil(nkZ, x, y - 2));
+    // n ~ (-zx, -zy, 1) in image axes (y down); the light comes from (LX, -LY, 1)
+    const lam = Math.max(0, (-zx * NECK_LX + zy * NECK_LY + 1) / (Math.hypot(zx, zy, 1) * nkLn));
+    const nrm = 1 - NECK_NRM * (1 - lam);
+    const t = bil(tone, x, y), tb = bil(nkT, x, y);
+    const det = Math.min(1.6, Math.max(0.5, Math.pow((t + 0.03) / (tb + 0.03), NECK_DET)));
+    const flat = Math.min(1.8, Math.max(0.55, Math.pow((nkTref + 0.03) / (nkTr[k] + 0.03), NECK_FLAT)));
+    // (the lift is the throat's, under the chin: under the jaw corners the neck stays in the jaw's shadow, or the
+    // sides read as two lit posts)
+    const lift = 1 + NECK_LIFT * (1 - smooth(yj, yj + NECK_LIFTL, y)) * (1 - u * u);
+    const fade = NECK_FADE * Math.pow(smooth(chinY + NECK_FADE0, NECK.y1(x) + NECK_FADE1, y), NECK_FADEP);
+    const rel = 1 + neckRelief(x, y);
+    return 1 - below * (1 - NECK_LVL * cyl * nrm * det * flat * lift * (1 - fade) * rel);
   };
-  const neckK = NECK.k;
+  // No neck (?holo.neck=0): the head ends at the jaw / beard line. Below the jaw everything dissolves into dashes and
+  // gold dots over a short band, keyed on how far a point lies below the jaw line AND how far it sits behind the jaw's
+  // own depth: the neck surface just under the chin is far behind it, so it goes first, while the underside of the jaw
+  // (seen in turned views) frays out gradually instead of ending in a hard cut. The depth term eases in over CUT_ZR px
+  // under the jaw line, so the filament segments that cross the line keep their upper end. Above the line nothing
+  // changes.
+  const NECK_ON = dbg('neck', 1) > 0.5;
+  const CUT_HOLD = dbg('cuthold', 2), CUT_SIG = dbg('cutsig', 28), CUT_Z = dbg('cutz', 0.25), CUT_ZR = Math.max(1, dbg('cutzr', 8));
+  const CUT_GLOW = dbg('cutglow', 0.35);
+  const jawZ = new Float32Array(W);
+  for (let x = 0; x < W; x++) jawZ[x] = bil(depth, x, polyY(JAW, x) - 3);
+  const jawZAt = (x: number) => jawZ[Math.min(W - 1, Math.max(0, Math.round(x)))];
+  const cutK = (x: number, y: number, z: number) => {
+    const yj = polyY(JAW, x);
+    if (y <= yj + 1) return 1;
+    const s = Math.max(0, y - yj - CUT_HOLD) + CUT_Z * Math.max(0, jawZAt(x) - z) * smooth(yj, yj + CUT_ZR, y);
+    return Math.exp(-Math.pow(s / CUT_SIG, 2));
+  };
+  // brightness under the jaw: the face's own, with a faint glow on the fraying band (gold embers)
+  const cutBright = (x: number, y: number, z: number) => {
+    if (y <= polyY(JAW, x)) return 1;
+    const k = cutK(x, y, z);
+    return 1 + CUT_GLOW * 4 * k * (1 - k);
+  };
   const EAR_XL = LMk[234][0] - 4, EAR_XR = LMk[454][0] + 4, EAR_Y0 = LMk[468][1] - 70, EAR_Y1 = LMk[172][1] - 20;
   // (finishing pass) the zone between the ear and the cheek (pre-auricular skin, sideburn) is flagged with the ear, so
   // in turned views the filaments bridge from the cheek into the ear instead of leaving a black gap
@@ -504,11 +652,14 @@ export function buildFaceGeometry(input: BuildInput): BuildOutput {
     if (!lineStart) arc += Math.hypot(x - lastX, y - lastY, z - lastZ);
     let nk = 1, mm = m;
     if (y > neckY0 - 140) {
-      nk = neckK(x, y);
-      // the mask's own neck fade starts ~25 px below the chin: remap it so the filaments stay whole for a short
-      // neck and only then dissolve (the fragment dash dissolve keys on this value)
-      if (y > chinY - 20 && !(kind >= K_HAIR && kind < K_BROW)) mm = Math.min(1, m / 0.62);
-      if (kind < K_HAIR) I *= neckBright(x, y);
+      nk = NECK_ON ? NECK.k(x, y) : cutK(x, y, z);
+      // the mask's own neck fade starts ~25 px below the chin: remap it so the filaments stay whole down to the
+      // jaw line (the fragment dash dissolve keys on this value); inside the neck the mask's fade is ignored
+      if (!(kind >= K_HAIR && kind < K_BROW)) {
+        if (y > chinY - 20) mm = Math.min(1, m / 0.62);
+        if (NECK_ON) mm = neckMask(x, y, mm);
+      }
+      if (kind < K_HAIR) I *= NECK_ON ? neckBright(x, y) : cutBright(x, y, z);
     }
     Pp[nP * 3] = x; Pp[nP * 3 + 1] = y; Pp[nP * 3 + 2] = z;
     A[nP * 4] = I; A[nP * 4 + 1] = half; A[nP * 4 + 2] = arc; A[nP * 4 + 3] = lineSeed;
@@ -1302,11 +1453,15 @@ export function buildFaceGeometry(input: BuildInput): BuildOutput {
       phor.set([-2, -2, -2, -2], k * 4);
     }
     // neck dust along the visible neck's dissolve line: dimmer than the filaments, and only a share of it shown (the
-    // rest is parked as kind 9, never drawn), so the slim column does not end in a dense glitter cluster. The stream is
+    // rest is parked as kind 9, never drawn), so the neck does not end in a dense glitter cluster. The stream is
     // then rewound and advanced exactly as the reference neck's loop draws it (emit = false), so the network nodes and
     // glints after it stay put whatever the visible neck looks like.
     const DUST_W = dbg('neckdustw', 2), DUST_KEEP = dbg('neckdustkeep', 0.65), DUST_I = dbg('neckdusti', 0.7);
-    const neckDust = (shape: ReturnType<typeof mkNeck>, emit: boolean, wPow: number) => {
+    type DustShape = Pick<NeckFns, 'y1' | 'w' | 'v'>;
+    // the band the dust is drawn from: centre offset below shape.y1 and its half width (crop px), and its depth
+    let bandC = 30, bandW = 30;
+    let dustZ = (x: number, y: number) => bil(depth, x, y) + 2;
+    const neckDust = (shape: DustShape, emit: boolean, wPow: number) => {
       let made = 0, tries = 0;
       while (made < nNeck && tries < nNeck * 200) {
         tries++;
@@ -1314,11 +1469,13 @@ export function buildFaceGeometry(input: BuildInput): BuildOutput {
         const y1 = shape.y1(x);
         const y = y1 - 10 + rng() * 90;
         const m = bil(mask, x, y);
-        const wgt = Math.pow(shape.w(x, y), wPow) * Math.min(1, m * 2.5) * Math.pow(1 - shape.v(y, x), 0.6) * Math.exp(-Math.pow((y - y1 - 30) / 30, 2));
+        // (the visible neck's dust stays under the jaw line, where its fields are 1, and, like its filaments, ignores
+        // the mask's own fade)
+        const wgt = emit && y <= polyY(JAW, x) + 4 ? 0 : Math.pow(shape.w(x, y), wPow) * (emit ? 1 : Math.min(1, m * 2.5)) * Math.pow(1 - shape.v(y, x), 0.6) * Math.exp(-Math.pow((y - y1 - bandC) / bandW, 2));
         if (rng() > wgt) continue;
         made++;
         if (!emit) { rng(); rng(); continue; }
-        const z = bil(depth, x, y) + 2;
+        const z = dustZ(x, y);
         toWorld(x, y, z, w);
         ppos.set(w, k * 3);
         pinfo.set([rng() < DUST_KEEP ? 1 : 9, rng(), rng(), DUST_I * (0.4 + 0.6 * bil(tone, x, y))], k * 4);
@@ -1327,11 +1484,30 @@ export function buildFaceGeometry(input: BuildInput): BuildOutput {
       }
     };
     const rs0 = rs;
-    neckDust(NECK, true, DUST_W); // > 1 keeps the dust inside the column (not a wider skirt)
+    if (NECK_ON) neckDust(NECK, true, DUST_W); // > 1 keeps the dust inside the neck's outline (not a wider skirt)
+    else {
+      // no neck: embers shed from the jaw's underside, along the jaw line between the jaw corners, at the jaw's own
+      // depth (not the neck surface far behind it), so they hang under the chin in turned views too. Most of it sits
+      // under the chin, where the jaw is lowest (on the steep jaw sides it read as dandruff), but its very centre is
+      // thinned (CUT_DUST_MID) so it does not read as crumbs falling out of the beard.
+      const jx0 = LMk[172][0], jx1 = LMk[397][0], jcx = LMk[152][0], jhw = 0.5 * (jx1 - jx0) * dbg('cutdustx', 0.8);
+      const jfl = dbg('cutdustside', 0.3), jmid = dbg('cutdustmid', 0.5), jmidw = dbg('cutdustmidw', 30), jzb = dbg('cutdustz', 12);
+      const cutDust: DustShape = {
+        y1: (x) => polyY(JAW, x) + CUT_HOLD,
+        w: (x) => smooth(jx0 - 4, jx0 + 22, x) * smooth(jx1 + 4, jx1 - 22, x) * (jfl + (1 - jfl) * Math.exp(-Math.pow((x - jcx) / jhw, 2))) * (1 - jmid * Math.exp(-Math.pow((x - jcx) / jmidw, 2))),
+        v: (y, x) => { const d = y - polyY(JAW, x) - CUT_HOLD; return d < 0 ? 1 : Math.exp(-Math.pow(d / CUT_SIG, 2)); },
+      };
+      bandC = dbg('cutdustc', 5); bandW = dbg('cutdustw', 18);
+      dustZ = (x, y) => Math.max(bil(depth, x, y), jawZAt(x) - jzb) + 2;
+      neckDust(cutDust, true, 1);
+      bandC = 30; bandW = 30;
+      dustZ = (x, y) => bil(depth, x, y) + 2;
+    }
     rs = rs0;
     neckDust(neckRef, false, 1);
-    // the neck's axis in world x: the shader draws the falling dust in toward it
-    neckX = toWorld(NECK.cx, NECK.y1(NECK.cx), bil(depth, NECK.cx, NECK.y1(NECK.cx)) + 2, w)[0];
+    // the neck's axis in world x: the shader draws the falling dust in toward it (no neck: the chin)
+    const axX = NECK_ON ? NECK.cx : LMk[152][0], axY = NECK_ON ? NECK.y1(NECK.cx) : chinY;
+    neckX = toWorld(axX, axY, bil(depth, axX, axY) + 2, w)[0];
     // network nodes at REAL crossings of slices, meridians and diagonals on the open planes (never on the eyes):
     // a steady faint node, ~4 % hubs a little brighter, and rare short flashes
     const nn = nodes.length >> 2;

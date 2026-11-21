@@ -348,7 +348,8 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
     uniforms: {
       ...colors, ...common, uMerLod: filMat.uniforms.uMerLod, uNode: { value: dbg('gnode', 1.0) },
       // neck dust: (axis world x, how far it is drawn in toward the axis by the end of its fall, fall length scale)
-      uNeck: { value: new THREE.Vector3(info.neckX, dbg('neckin', 0.12), dbg('neckfall', 0.5)) },
+      // (no neck, ?holo.neck=0: the embers under the jaw drift almost straight down, a little further)
+      uNeck: { value: dbg('neck', 1) > 0.5 ? new THREE.Vector3(info.neckX, dbg('neckin', 0.12), dbg('neckfall', 0.5)) : new THREE.Vector3(info.neckX, dbg('neckin', 0.03), dbg('neckfall', 1.2)) },
     },
     vertexShader: /* glsl */ `
       attribute vec4 aInfo;
