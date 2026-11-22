@@ -64,6 +64,7 @@ function snapshot(gpu: string): string[] {
   const st = w.__sphereStore?.getState();
   return [
     `DIAG ${Math.round((performance.now() - t0) / 1000)}s · ${navigator.userAgent.replace(/Mozilla\/5.0 /, "").slice(0, 140)}`,
+    `page ${location.href.slice(0, 160)}`,
     `screen ${innerWidth}x${innerHeight} @${devicePixelRatio} · Worker ${typeof Worker !== "undefined"} · OffscreenCanvas ${typeof OffscreenCanvas !== "undefined"} · createImageBitmap ${typeof createImageBitmap !== "undefined"}`,
     gpu,
     `poster ${poster ? `${poster.complete ? "complete" : "loading"} ${poster.naturalWidth}px ${poster.currentSrc.split("/").pop()} display:${poster.style.display || "-"}` : "none in DOM"} · canvas ${canvas ? `${canvas.width}x${canvas.height}` : "none"}`,

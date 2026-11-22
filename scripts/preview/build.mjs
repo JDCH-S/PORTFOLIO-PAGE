@@ -54,7 +54,22 @@ const js = await build({
   define: { "process.env.NODE_ENV": '"production"', "process.env.PREVIEW_DIAG": JSON.stringify(process.env.PREVIEW_DIAG ?? "0"), __HOLOGRAM_WORKER_SOURCE__: JSON.stringify(workerSource) },
   plugins: [swapWorker],
 });
-const script = js.outputFiles[0].text.replace(/<\/script/gi, "<\\/script");
+// The site serves its assets from the domain root ("/hologram/", "/sphere-static.webp"). A hosted preview may live in
+// a sub-folder (the Claude app serves it under /<id>/), where root paths 404: no maps, no poster, an empty hero. The
+// preview asks for them relative to the page instead (they are written next to index.html below).
+const ROOT_ASSETS = [
+  ['"/hologram/"', '"hologram/"', 1],
+  ['"/sphere-static-600.webp 600w, /sphere-static.webp 1200w"', '"sphere-static-600.webp 600w, sphere-static.webp 1200w"', 1],
+  ['"/sphere-static.webp"', '"sphere-static.webp"', 2],
+];
+let bundle = js.outputFiles[0].text;
+for (const [from, to, n] of ROOT_ASSETS) {
+  const parts = bundle.split(from);
+  if (parts.length - 1 !== n) throw new Error(`preview: expected ${n} x ${from} in the bundle, found ${parts.length - 1}`);
+  bundle = parts.join(to);
+}
+if (/["' ]\/(hologram\/|sphere-static)/.test(bundle)) throw new Error("preview: a root-relative asset path is left in the bundle");
+const script = bundle.replace(/<\/script/gi, "<\\/script");
 
 // 2. CSS: the app's own globals.css through Tailwind, scanning src/ for classes
 const cssIn = fs.readFileSync(path.join(root, "src/app/globals.css"), "utf8");
