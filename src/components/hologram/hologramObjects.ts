@@ -5,6 +5,7 @@ import { HOLO_PALETTE } from "./config";
 /**
  * The THREE layer of the face hologram (ported from face-lab proto-a/hologram.js): wraps the builder's packed arrays
  * in four objects (filaments, particles, orbitals + marks, halo: 4 draw calls) and drives them from update(state).
+ * The filament material also samples the builder's stubble texture (one mipmapped R8 texture).
  *
  * Site changes against the prototype: every width / size that the shaders add in view space is multiplied by the
  * model-view scale (objS), so the head can be parked small by scaling the rig (the prototype only ever zoomed the
@@ -82,6 +83,11 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
     uPxWorldPerDist: { value: 0.001 }, uDpr: { value: 1 }, uCamObj: { value: new THREE.Vector3(0, 0, 4) },
     uSweepY: { value: 2 }, uZ0: { value: -world.cz * S }, uRimW: { value: dbg('rimw', 0.035) }, uSS: { value: 1 },
   };
+  // (polish pass, turned views) TURN_VIS = [occlusion soft band at full turn, shell facing fade from / to, shell limb
+  // compensation, shell turn gate from / to, ear-zone edge strokes fade from / to, steep-wall hair strands' handover
+  // from / to] (see horizonVis and the shell branch)
+  const TURN_VIS = [dbg('horsoft', 0.1), dbg('shellf0', 0.0), dbg('shellf1', 0.25), dbg('shelllimb', 0.45), dbg('shellturn0', 0.02), dbg('shellturn1', 0.14), dbg('earedge0', 0.02), dbg('earedge1', 0.14),
+    dbg('hairturn0', 0.02), dbg('hairturn1', 0.13)].map((v) => v.toFixed(4));
   const GLSL_VIS = /* glsl */ `
     uniform vec3 uCamObj;
     uniform float uZ0, uRimW;
@@ -92,9 +98,28 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
       // so front-on every surface point the photo shows must be visible; the per-point ray (uCamObj - p) tilted ~9 deg
       // for the neck and the chin occluded it (the black band under the jaw)
       vec3 v = uCamObj;
-      float ex = v.x >= 0.0 ? atan(v.z, v.x) - h.x : atan(v.z, -v.x) - h.y;
-      float ey = v.y >= 0.0 ? atan(v.z, v.y) - h.z : atan(v.z, -v.y) - h.w;
-      return smoothstep(-0.02, 0.22, ex) * smoothstep(-0.02, 0.22, ey);
+      float hx = v.x >= 0.0 ? h.x : h.y, hy = v.y >= 0.0 ? h.z : h.w;
+      float ex = atan(v.z, abs(v.x)) - hx;
+      float ey = atan(v.z, abs(v.y)) - hy;
+      // (polish pass) head-on the soft band is 0.22 rad wide (nothing the photo shows is dimmed by a noisy horizon);
+      // turned, that width dimmed everything within 13 degrees of an occluder's edge: a dark wedge between the nose
+      // bridge and the far eye's inner corner at yaw 20-35. The band narrows with the turn (head-on it is unchanged).
+      float turn = smoothstep(0.03, 0.3, 1.0 - normalize(v).z);
+      float soft = mix(0.22, ${TURN_VIS[0]}, turn);
+      float vis = smoothstep(-0.02, soft, ex) * smoothstep(-0.02, soft, ey);
+      // Yaw and pitch together: the two tests above take the view's elevation in the xz and yz planes one at a time,
+      // so a bump straight below a point (the alar wing under the nose flank) hid it from a camera that is below AND to
+      // the side, where the ray passes beside the bump: blocky black holes on the nose flank and under the lip at the
+      // drag limits. For such views the horizon along the view's own azimuth is estimated from the two axis horizons
+      // (slopes weighted by the squared direction cosines) and tested against the true elevation; it only ever adds
+      // visibility, and only when turned.
+      vec2 w = v.xy * v.xy;
+      float l2 = max(w.x + w.y, 1e-9);
+      float haz = atan((tan(clamp(hx, -1.5, 1.5)) * w.x + tan(clamp(hy, -1.5, 1.5)) * w.y) / l2);
+      float visAz = smoothstep(-0.02, soft, atan(v.z, sqrt(l2)) - haz);
+      // (what is hidden head-on, under an overhang steeper than ~77 degrees, stays hidden)
+      visAz *= smoothstep(-0.02, 0.22, 1.5708 - hx) * smoothstep(-0.02, 0.22, 1.5708 - hy);
+      return mix(vis, max(vis, visAz), turn);
     }
     // turned views: the half-shell's back rim (near the z = 0 silhouette plane) tapers out smoothly (ears exempt)
     float rimTaper(vec3 p, float ear) {
@@ -112,12 +137,42 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
   recTex.magFilter = recTex.minFilter = THREE.NearestFilter;
   recTex.generateMipmaps = false;
   recTex.needsUpdate = true;
+  // (polish pass) the stubble: a darkening texture over the facial hair (builder 3b), sampled by every skin filament at
+  // its own crop position; mipmapped, so the hairs average into their tone when the head is small
+  const SB = out.stub;
+  const stubTex = new THREE.DataTexture(SB ? SB.px : new Uint8Array(1), SB ? SB.w : 1, SB ? SB.h : 1, THREE.RedFormat, THREE.UnsignedByteType);
+  stubTex.unpackAlignment = 1;
+  stubTex.magFilter = THREE.LinearFilter;
+  stubTex.minFilter = THREE.LinearMipmapLinearFilter;
+  stubTex.generateMipmaps = true;
+  stubTex.needsUpdate = true;
   const filGeo = new THREE.BufferGeometry();
   // 2-byte stub per vertex: three wants a position attribute to count vertices; the shader reads gl_VertexID instead
   filGeo.setAttribute('position', new THREE.BufferAttribute(new Uint8Array(F.count * 2), 1));
   filGeo.setIndex(new THREE.BufferAttribute(F.index, 1));
   filGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.2);
 
+  // (polish pass) hair filaments (kinds 2.8 strands, 2.9 outline, and the back-of-head shell). His hair is near-black,
+  // so it is a few thin filaments on black; the dim
+  // deep amber the other strand kinds use comes out red-brown after tone mapping (the hair read auburn), so the hair runs
+  // from gold (dim) to a lighter gold (sheen): the base colour's green raised toward the hot colour's by HAIR_COL[0]
+  // .. [1] over lum HAIR_COL[2] .. [3], its blue only by HAIR_COL[4] of that (a paler mix came out grey-beige once the
+  // strands blend into a tone at parked sizes: grey hair).
+  const glf = (v: number) => v.toFixed(4);
+  const HAIR_COL = [dbg('hcol0', 0.14), dbg('hcol1', 0.3), dbg('hcole0', 0.05), dbg('hcole1', 0.6), dbg('hcolb', 0.45)].map(glf);
+  // (fix pass) parked sizes. Once the head is small enough that the scan slices have blended into continuous tone, the
+  // skin must still be a wire mesh, not a gold-toned photograph. The first polish pass switched the whole network off
+  // there (with the slices gone, meridians plus diagonals were a herringbone knit). Now only the diagonals and the nodes
+  // go; the meridians stay, and every 2^GRID_RANK-th scan slice (the pitch nearest the meridians') keeps a thin lit
+  // core on top of its tone: together a fine lat / long net at about the meridian pitch. Where that pitch falls under
+  // ~3.5 px (the phone's 193 px section view once its canvas has stepped down to DPR 1) the net drops a rank of both families (twice the pitch) instead of
+  // closing up into pinstripes, and at emblem sizes it is gone (uSmall). The coarse low-tier net has boosted meridians
+  // (they are what shows the mesh on a phone at full size); parked they give that boost back.
+  // (The coarser a tier's net, the quieter its lines: at the high tier's pitch the net is fine enough to carry more
+  // light; at the low tier's the same light read as a grid printed over a toned photograph.)
+  const NET_PITCH = info.merWorld / S;
+  const PARK_MER = NET_PITCH > 14.5 ? 0.42 : NET_PITCH > 12 ? 0.5 : 0.65, PARK_GRID = NET_PITCH > 14.5 ? 0.19 : NET_PITCH > 12 ? 0.2 : 0.24;
+  const GRID_RANK = Math.min(4, Math.max(1, Math.round(dbg('parkrank', Math.log2(info.merWorld / Math.max(1e-9, info.scanWorld))))));
   const filMat = new THREE.ShaderMaterial({
     ...additive,
     side: THREE.DoubleSide,
@@ -125,6 +180,16 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
       ...colors, ...common,
       uGain: { value: dbg('gain', 1.0) }, uScanW: { value: info.scanWorld }, uMerW: { value: info.merWorld }, uCropW: { value: info.cropWorld },
       uLod: { value: 0 }, uMerLod: { value: 0 }, uRec: { value: recTex }, uRecW: { value: F.texW }, uFeatPx: { value: dbg('featpx', 0.55) }, uVisOff: { value: dbg('visoff', 0) }, uEdgeOn: { value: new THREE.Vector2(dbg('eon0', 0.08), dbg('eon1', 0.35)) }, uCap: { value: dbg('cap', 0.8) }, uMeshFloor: { value: dbg('meshfloor', 0.75) }, uSmall: { value: 0 }, uCrowd: { value: dbg('crowd', 0.7) }, uMinHalf: { value: 0.55 }, uBand: { value: new THREE.Vector2(1.8, 2.8) }, dbgBL: { value: new THREE.Vector2(dbg('blmin', 0.9), dbg('blk', 1.0)) },
+      // stubble texture: its box in crop px (x0, y0, 1 / width, 1 / height), the crop <- object mapping (cx, cy, 1 / camDist)
+      // and (how dark a hair is, mip bias)
+      uStub: { value: stubTex }, uStubRect: { value: SB ? new THREE.Vector4(SB.x0, SB.y0, SB.k / SB.w, SB.k / SB.h) : new THREE.Vector4(0, 0, 0, 0) },
+      uStubMap: { value: new THREE.Vector3(world.cx, world.cy, world.camDist > 0 ? 1 / world.camDist : 0) }, uStubA: { value: new THREE.Vector2(SB ? dbg('stubk', 1.0) : 0, dbg('stubbias', -0.4)) },
+      // parked sizes (see update): x = how far the slice stack has blended into tone at this size, y = what a slice
+      // that runs toward the eye keeps of its light there, z = what the meridians keep, w = the wire slices' gain;
+      // uGrid = (rank from which a slice is a wire slice, the wire's half width in device px, the net's level: each
+      // level drops one more rank of meridians and wire slices, doubling the net's pitch)
+      uParked: { value: new THREE.Vector4(0, dbg('parkfloor', 0.62), dbg('parkmer', PARK_MER), dbg('parkgrid', PARK_GRID)) },
+      uGrid: { value: new THREE.Vector3(GRID_RANK, 0.55, 0) },
     },
     vertexShader: /* glsl */ `
       uniform highp usampler2D uRec;
@@ -133,8 +198,15 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
       uniform float uLod, uMerLod, uFeatPx, uCap, uVisOff, uMeshFloor, uSmall, uCrowd, uMinHalf, uSS;
       uniform vec2 uEdgeOn, uBand;
       uniform vec2 dbgBL;
+      uniform vec4 uStubRect;
+      uniform vec3 uStubMap;
+      uniform vec2 uStubA;
+      uniform vec4 uParked;
+      uniform vec3 uGrid;
       ${GLSL_VIS}
       varying float vSide, vI, vU, vM, vSeed, vComp, vKind, vFront;
+      varying vec3 vStub;
+      varying vec2 vWire;
       float lo16s(uint w) { return max(float(int(w << 16u) >> 16) / 32767.0, -1.0); }
       float hi16s(uint w) { return max(float(int(w) >> 16) / 32767.0, -1.0); }
       float lo16u(uint w) { return float(w & 65535u) / 65535.0; }
@@ -162,15 +234,32 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         float arcU = lo16u(r1.z) * 4096.0;
         float seed = hi16u(r1.z);
         float rank = u8(r1.w, 0u);
-        vSide = side; vI = 0.0; vU = arcU; vM = mk; vSeed = seed; vComp = 1.0; vKind = kind; vFront = 0.0;
+        vSide = side; vI = 0.0; vU = arcU; vM = mk; vSeed = seed; vComp = 1.0; vKind = kind; vFront = 0.0; vWire = vec2(0.0, 1.0);
+        // stubble lookup: the point's crop position (the builder's toWorld inverted) in the texture's box; skin filaments
+        // only (scan, meridians, edge strokes, diagonals)
+        float cropK = uCropW * (1.0 - p.z * uStubMap.z);
+        vStub = vec3((vec2(uStubMap.x + p.x / cropK, uStubMap.y - p.y / cropK) - uStubRect.xy) * uStubRect.zw, (kind < 1.5 || (kind > 5.95 && kind < 7.5)) ? uStubA.x : 0.0);
 
         float rim = rimTaper(p, earF);
         float vis = horizonVis(p, hor) * rim;
+        // (integration pass) how far the head is turned SIDEWAYS (1 - cos yaw; 0 for a pure pitch): the hair's handover
+        // to the turned views' strands (shell and sweep in, steep-wall strands out) is for the side views. Looking down
+        // on the head the photo's own strands stay: over the top they run sideways from the parting, the sweep runs
+        // straight back, and the two crossed there.
+        vec3 cdir = normalize(uCamObj);
+        float yawTurn = 1.0 - sqrt(max(0.0, 1.0 - cdir.x * cdir.x));
+        // (polish pass) the hair's outline (kind 2.9) lies in the silhouette plane: front view only
+        // (it goes with a pitch as well: kept there, it floats above the crown as a loose wire)
+        if (kind > 2.85 && kind < 2.975) vis *= 1.0 - smoothstep(0.012, 0.07, 1.0 - cdir.z);
         if (kind > 7.5) {
           // back-of-head shell: the gap slot holds the outward normal; front-facing part only, and only when turned
           vec3 nrm = normalize(vec3(s8(r1.x, 0u), s8(r1.x, 8u), s8(r1.x, 16u)) + 1e-6);
           float facing = dot(nrm, normalize(uCamObj - p));
-          vis = smoothstep(0.02, 0.3, facing) * smoothstep(0.1, 0.42, 1.0 - normalize(uCamObj).z);
+          // (polish pass) toward the shell's limb the strands crowd on screen as 1 / facing: their light is taken down
+          // with it (no bright outline around the back of the head). (integration pass) It comes in early in the turn
+          // (from ~11 degrees, whole by ~30, beyond the idle sway): the sweep strands on the side of the head must be
+          // there before the front strands they replace have gone (those hand over across the same range)
+          vis = smoothstep(${TURN_VIS[1]}, ${TURN_VIS[2]}, facing) * clamp(facing / ${TURN_VIS[3]}, 0.0, 1.0) * smoothstep(${TURN_VIS[4]}, ${TURN_VIS[5]}, yawTurn);
           rim = 1.0;
           if (uVisOff > 1.5) vis = 1.0; // debug ?visoff=2: whole shell
         }
@@ -185,6 +274,19 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         sd = sl > 1e-5 ? sd / sl : vec3(1.0, 0.0, 0.0);
         float edgeOn = smoothstep(uEdgeOn.x, uEdgeOn.y, sl);
         if (uVisOff > 0.5 && kind < 7.5) vis = rim;
+        // (polish pass) edge strokes in the ear zone trace the photo's front-view edges (tragus, sideburn, helix fold)
+        // over the steep wall between cheek and ear: head-on they are right, turned they smear into S-shaped scribbles
+        // in front of the ear, so they fade out with the turn
+        if (kind > 5.95 && kind < 6.5) vis *= 1.0 - earF * smoothstep(${TURN_VIS[6]}, ${TURN_VIS[7]}, 1.0 - normalize(uCamObj).z);
+        // and the slice ends that run along the ear's outer rim stack up there into a heavy drawn outline: the builder
+        // marks them (turn fade, record word 7 bits 8-15) and they go out with the turn (a soft rear edge; the thin rim
+        // filament is the helix line)
+        // (integration pass) the hair strands on the relief's steep walls carry it too: turned, they hand over to the
+        // sweep strands (shell kind), which are laid for those views
+        float turnFade = u8(r1.w, 8u) / 255.0; // the share of its light a point gives up when the head is turned
+        // (fix pass: the hair's handover is over by ~30 degrees of yaw, as the sweep's arrival is; while it ran on to 45
+        // the two sets of strands crossed on the far upper side of the head at yaw 30)
+        vis *= 1.0 - turnFade * (kind > 2.5 && kind < 3.0 ? smoothstep(${TURN_VIS[8]}, ${TURN_VIS[9]}, yawTurn) : smoothstep(0.03, 0.3, 1.0 - cdir.z));
         float dist = max(-mv.z, 0.05);
         float half_ = halfCrop * uCropW * objS * mix(0.35, 1.0, smoothstep(0.2, 0.95, mk)) * mix(0.55, 1.0, rim);
         float wpp = uPxWorldPerDist * dist / uDpr; // world units per device pixel here
@@ -206,9 +308,17 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
           // energy-conserving: a survivor carries the energy of the slices it replaces through its (virtual) width;
           // the drawn width / vComp below turn that into width first, brightness never rises (no hot forehead)
           half_ *= G;
-          lodGain = keep * (isMer ? 1.0 - smoothstep(0.0, 1.0, uMerLod) : 1.0); // meridians: no mesh at parked sizes
-        } else if (kind > 6.5) {
-          lodGain = 1.0 - smoothstep(0.0, 1.0, uMerLod);
+          // meridians: at full size none below MER_DOWN px; parked, the net's ranks at uParked.z of their light
+          float Ln = floor(uGrid.z), fn = uGrid.z - Ln;
+          float keepN = rank >= Ln + 1.0 ? 1.0 : (rank >= Ln ? 1.0 - fn : 0.0);
+          // (a coarser net is drawn on a smaller head: a quarter dimmer from the first level on)
+          lodGain = isMer ? mix(keep * (1.0 - smoothstep(0.0, 1.0, uMerLod)), keepN * uParked.z * (1.0 - 0.25 * min(uGrid.z, 1.0)) * (1.0 - uSmall), uParked.x) : keep;
+        } else if (kind > 6.5 && kind < 7.5) {
+          // the diagonals go with the meridian LOD and wherever the slices have blended to tone (parked): without the
+          // slices they knit a herringbone with the meridians. (fix pass) NOT the back shell and the sweep strands
+          // (kind 8.x): they are the hair of the turned views at every size; culled here, a head turned in the parked
+          // section view had a bald side and back.
+          lodGain = (1.0 - smoothstep(0.0, 1.0, uMerLod)) * (1.0 - uParked.x);
         }
         // ---- band-limit from the PROJECTED local spacing (per vertex): where slices crowd below ~2.8 device px
         // (bunched under the nose / jaw, cheeks turning away at pitch) the line widens toward the spacing with energy
@@ -241,6 +351,12 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
           crowd = min(crowd, mix(1.0, tc, smoothstep(0.55, 0.85, slFront)));
         }
         float blend = spPx > 0.0 ? 1.0 - smoothstep(uBand.x, uBand.y, spPx) : 0.0;
+        // (fix pass) parked, the whole stack is tone: a slice whose neighbours happen to project further away than the
+        // band (the shelf of the lower lid, where the slices fan out) blends to its spacing like the rest. Left a crisp
+        // line among blended ones it was a lit dash under each iris. (Not a slice that runs toward the eye, the wall
+        // between nose and cheek: its spacing across the screen means nothing there, and widened to it the few sub-pixel
+        // quads it is drawn with became a row of lit dots down one side of the nose on a phone.)
+        if (isScan && spPx > 0.0) blend = max(blend, uParked.x * ${glf(dbg('parkblend', 1))} * smoothstep(0.25, 0.7, sl));
         // identity feature lines (lids, iris, catchlight, lips) keep a fixed minimum device-px width; at hero size they
         // dim linearly like everything else (tone unchanged), only when the head is parked small do they keep more of
         // their brightness (floor 0.5 * sqrt), so the eyes still read at 120 px
@@ -259,7 +375,15 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         // (finishing pass) the wireframe families (meridians, diagonals) keep most of their brightness at DPR 1 / 1.25,
         // where their true width is below the 1.1 px minimum: otherwise the mesh only shows at DPR 2 and the skin reads
         // as a plain horizontal hatch
-        if (isMer || kind > 6.5) vComp = max(vComp, uMeshFloor);
+        if (isMer || (kind > 6.5 && kind < 7.5)) vComp = max(vComp, uMeshFloor); // (polish pass: not the shell, it thins like the hair strands)
+        // (fix pass) parked: the wire slices (rank >= uGrid.x + the net's level) carry a thin lit core inside their blended ribbon (see
+        // the fragment shader); not where they crowd closer than ~3 px on screen (under the nose, a cheek turning away)
+        float wireR = uGrid.x + floor(uGrid.z);
+        if (isScan && uParked.x > 0.0 && rank >= wireR) {
+          float gsp = spPx * exp2(wireR) / uSS;
+          float wk = rank >= wireR + 1.0 ? 1.0 : 1.0 - fract(uGrid.z);
+          vWire = vec2(uParked.w * uParked.x * wk * (1.0 - 0.25 * min(uGrid.z, 1.0)) * smoothstep(2.4, 4.0, gsp) * (1.0 - uSmall), clamp(uGrid.y * uSS * wpp / (drawn * 1.6), 0.04, 1.0));
+        }
         mv.xyz += sd * side * drawn * 1.6;
         gl_Position = projectionMatrix * mv;
 
@@ -283,12 +407,21 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         // up there (a hot pixel on the eye / nose at 76 px): the feature lines give up half their light at emblem sizes
         if (feat) vI *= 1.0 - 0.5 * uSmall;
         vI *= crowd;
+        // (polish pass) parked sizes (uParked -> 1 with the mesh fade): slices that run toward the eye (the wall between
+        // nose and cheek, the ear's rim) are a few sub-pixel quads there and rasterise as stray bright pixels down the
+        // side of the nose; they give up part of their light with their foreshortening (not all of it: the flank keeps
+        // its tone). Nothing changes at hero size.
+        if (isScan) vI *= mix(1.0, mix(uParked.y, 1.0, smoothstep(0.12, 0.8, sl)), uParked.x);
         if (lodGain < 0.002) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uBase, uHot, uDeep;
       uniform float uTime;
+      uniform sampler2D uStub;
+      uniform vec2 uStubA;
       varying float vSide, vI, vU, vM, vSeed, vComp, vKind, vFront;
+      varying vec3 vStub;
+      varying vec2 vWire;
       float sq(float x) { return x * x; }
       // integer hash (PCG output permutation) of a dash cell and a filament seed, 0..1: a float sin() hash of
       // arguments up to ~2e4 is range-reduced coarsely on mobile GPUs (patterned dash keep/drop in the neck dissolve)
@@ -302,6 +435,8 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         float edge = 1.0 - smoothstep(0.3, 1.0, abs(vSide));
         float run = pow(0.5 + 0.5 * sin(vU * 0.03 - uTime * 0.9 + vSeed * 40.0), 6.0);
         float i = vI * (0.96 + 0.1 * run);
+        // stubble: fine dark hairs cut out of the skin filaments (sampled outside any branch: implicit derivatives)
+        i *= 1.0 - vStub.z * texture2D(uStub, vStub.xy, uStubA.y).r;
         // the neck dissolves: filaments break into shorter and shorter dashes, then soft dots, where the mask fades
         if (vM < 0.98) {
           float q = vU * 0.45 + vSeed * 17.0;
@@ -324,11 +459,20 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         vec3 lowCol = mix(mix(uDeep, uBase, 0.6), mix(uDeep, uBase, 0.55), strandK);
         vec3 col = mix(lowCol, uBase, smoothstep(0.02, 0.3, lum) * (1.0 - 0.6 * strandK));
         float deepK = vKind > 1.5 ? clamp((fract(vKind + 0.001) - 0.2) * 1.25, 0.0, 1.0) : 0.0;
+        // (polish pass) the back-of-head shell (kind 8.x) is hair: kept clear of the deep-amber tint, it takes the
+        // hair's gold below
+        float shellK = step(7.5, vKind);
+        deepK *= 1.0 - shellK;
         col = mix(col, mix(uDeep, uBase, 0.4), deepK * (1.0 - smoothstep(0.25, 0.7, lum)));
         // the network family (diagonals) leans a touch more amber than the scan so it reads as its own filaments
         col = mix(col, mix(uDeep, uBase, 0.55), step(6.5, vKind) * step(vKind, 7.5) * 0.5);
+        // hair (kinds 2.8, 2.9) and the shell: gold to a lighter gold, never the red-brown of a dim deep amber
+        float hairT = mix(${HAIR_COL[0]}, ${HAIR_COL[1]}, smoothstep(${HAIR_COL[2]}, ${HAIR_COL[3]}, lum));
+        col = mix(col, mix(uBase, uHot, vec3(0.0, hairT, hairT * ${HAIR_COL[4]})), max(step(2.7, vKind) * step(vKind, 2.975), shellK));
         col = mix(col, uHot, clamp(smoothstep(0.8, 1.5, lum) + 0.12 * vFront, 0.0, 1.0));
-        gl_FragColor = vec4(col * lum * edge * vComp, 1.0);
+        // parked wire slices: a thin core at the ribbon's centre line, on top of the tone the ribbon carries
+        float wire = vWire.x * (1.0 - smoothstep(0.5 * vWire.y, vWire.y, abs(vSide)));
+        gl_FragColor = vec4(col * lum * edge * vComp + col * lum * wire, 1.0);
       }`,
   });
   const filaments = new THREE.Mesh(filGeo, filMat);
@@ -346,7 +490,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
   const ptMat = new THREE.ShaderMaterial({
     ...additive,
     uniforms: {
-      ...colors, ...common, uMerLod: filMat.uniforms.uMerLod, uNode: { value: dbg('gnode', 1.0) },
+      ...colors, ...common, uMerLod: filMat.uniforms.uMerLod, uParked: filMat.uniforms.uParked, uNode: { value: dbg('gnode', 1.0) },
       // neck dust: (axis world x, how far it is drawn in toward the axis by the end of its fall, fall length scale)
       // (no neck, ?holo.neck=0: the embers under the jaw drift almost straight down, a little further)
       uNeck: { value: dbg('neck', 1) > 0.5 ? new THREE.Vector3(info.neckX, dbg('neckin', 0.12), dbg('neckfall', 0.5)) : new THREE.Vector3(info.neckX, dbg('neckin', 0.03), dbg('neckfall', 1.2)) },
@@ -356,6 +500,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
       attribute vec4 aHor;
       uniform float uTime, uConverge, uAssemble, uIgnite, uPxWorldPerDist, uDpr, uPulse, uMerLod, uNode, uSS;
       uniform vec3 uNeck;
+      uniform vec4 uParked;
       ${GLSL_VIS}
       varying float vA, vHot;
       void main() {
@@ -389,7 +534,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
           float tw = pow(max(0.0, sin(uTime * (0.35 + 0.5 * aInfo.y) + aInfo.z * 80.0)), 40.0);
           size = mix(0.0042, 0.0062, hub);
           a = aInfo.w * (mix(0.16, 0.42, hub) + 1.3 * tw) * horizonVis(position, aHor) * rimTaper(position, 0.0);
-          a *= smoothstep(0.7, 1.0, uAssemble) * uNode * (1.0 - smoothstep(0.0, 1.0, uMerLod));
+          a *= smoothstep(0.7, 1.0, uAssemble) * uNode * (1.0 - smoothstep(0.0, 1.0, uMerLod)) * (1.0 - uParked.x); // (with the diagonals)
           vHot = tw;
         }
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -565,25 +710,39 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
   haloGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
   haloGeo.setIndex([0, 1, 2, 0, 2, 3]);
   haloGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 2);
+  // (polish pass) the halo sat behind the whole head and veiled the dark hair maroon: behind the hair it now fades to
+  // HALO_TOP of its strength. It stays behind the face (it carries ~5 % of the forehead's light), the jaw and the neck:
+  // the face is a superellipse window in the halo's own frame, HALO_FACE = half width at the temples, height of the
+  // hairline above the eye line (both from the photo, in halo units); below the ears nothing fades. (integration pass)
+  // The window follows the face when the head turns (HALO_FACE[2] = the face's depth in front of the pivot, world
+  // units): fixed in the halo's frame it ended up behind the ear and the back of the head at the yaw limit.
+  const HALO_TOP = glf(dbg('halotop', 0.12));
+  const HALO_FACE = [dbg('halofw', 0.325), dbg('halofh', 0.36), dbg('halofz', 0.2)].map(glf);
   const haloMat = new THREE.ShaderMaterial({
     ...additive,
     uniforms: { ...colors, ...common, uHalo: { value: dbg('halo', 1.0) } },
     vertexShader: /* glsl */ `
-      varying vec2 vP;
+      varying vec2 vP, vFace;
       void main() {
         vec4 c = modelViewMatrix * vec4(0.0, 0.08, -0.3, 1.0);
         vP = position.xy;
-        c.xy += position.xy * vec2(1.15, 1.3) * length(modelViewMatrix[0].xyz);
+        vec2 sz = vec2(1.15, 1.3) * length(modelViewMatrix[0].xyz);
+        // (integration pass) where the face is in the halo's frame: the halo sits behind the head's pivot, the face in
+        // front of it, so when the head turns they part on screen and the face window has to follow the face
+        vFace = ((modelViewMatrix * vec4(0.0, 0.08, ${HALO_FACE[2]}, 1.0)).xy - c.xy) / sz;
+        c.xy += position.xy * sz;
         gl_Position = projectionMatrix * c;
       }`,
     fragmentShader: /* glsl */ `
       uniform vec3 uBase, uDeep;
       uniform float uIgnite, uPulse, uTime, uHalo, uAssemble;
-      varying vec2 vP;
+      varying vec2 vP, vFace;
       void main() {
         float r = length(vP);
         float g = exp(-r * r * 4.6) * 0.75 + exp(-r * r * 10.0) * 0.25;
         g *= 1.0 - smoothstep(0.85, 1.0, r);
+        float hd = pow(abs(vP.x - vFace.x) / ${HALO_FACE[0]}, 2.5) + pow(max(vP.y, 0.0) / ${HALO_FACE[1]}, 2.5);
+        g *= mix(1.0, ${HALO_TOP}, smoothstep(0.8, 1.25, hd) * smoothstep(-0.04, 0.1, vP.y));
         float breathe = 0.92 + 0.08 * sin(uTime * 0.5);
         vec3 col = mix(uDeep, uBase, 0.35);
         // the halo only appears once the head is built (no glow ahead of the scan front during the intro)
@@ -602,7 +761,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
     ...info.counts,
     scanStep: +info.scanStep.toFixed(3),
     devPerCrop: +info.devPerCrop.toFixed(3),
-    gpuBytes: info.bytes.texture + info.bytes.index,
+    gpuBytes: info.bytes.texture + info.bytes.index + (SB ? Math.round(SB.px.length * 1.34) : 0),
     // what three submits per frame (the harness's count): 2 ribbon sides per filament point, particles, marks, halo
     vertices: F.count * 2 + PT.count + mp.length / 3 + 4,
     drawCalls: 4,
@@ -627,7 +786,14 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
   const MER_DOWN = 3.2, MER_UP = 3.8;
   // [at DPR 1, at DPR 2]: minimum line half-width (device px) and the band-limit ramp (projected slice spacing, px)
   const AA = { minHalf: [dbg('aamin', 0.75), 0.55], band0: [dbg('aab0', 2.2), 1.8], band1: [dbg('aab1', 3.4), 2.8] };
-  const lod = { scan: -1, scanF: 0, mer: -1, merF: 0 };
+  // (fix pass) "parked" = the scan slices have blended into tone at this size: PARK[0] .. PARK[1] of the band-limit's
+  // blend at the nominal slice spacing (0 at every tier's full size; 1 at the 355 px section view, and on a phone whose
+  // canvas resolution was stepped down under a head built for the higher one)
+  const PARK = [dbg('park0', 0.35), dbg('park1', 0.85)];
+  const sstep = (a: number, b: number, v: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  // the net's pitch (meridians, wire slices) doubles while it would be under NET_DOWN display px (hysteresis, crossfaded)
+  const NET_DOWN = dbg('netdown', 3.5), NET_UP = dbg('netup', 4.0), PARK_WIRE = dbg('parkwire', 1.0);
+  const lod = { scan: -1, scanF: 0, mer: -1, merF: 0, net: -1, netF: 0, parked: 0 };
   function lodTarget(cur: number, spacing: number, down: number, up: number, max: number) {
     let L = cur < 0 ? 0 : cur;
     while (L < max && spacing * 2 ** L < down) L++;
@@ -677,6 +843,9 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
     const step = state.dt > 0 ? state.dt / LOD_FADE : 1e9;
     lod.scanF += Math.max(-step, Math.min(step, lod.scan - lod.scanF));
     lod.merF += Math.max(-step, Math.min(step, lod.mer - lod.merF));
+    lod.net = lodTarget(lod.net, merPx, NET_DOWN, NET_UP, 3);
+    lod.netF += Math.max(-step, Math.min(step, lod.net - lod.netF));
+    filMat.uniforms.uGrid.value.z = lod.netF;
     filMat.uniforms.uLod.value = lod.scanF;
     filMat.uniforms.uMerLod.value = lod.merF;
     filMat.uniforms.uSmall.value = Math.min(1, Math.max(0, (1.0 - scanPx) / 0.6));
@@ -686,8 +855,14 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
     // every line gets a wider minimum footprint below DPR 2 (energy compensated, so tone is unchanged) and the
     // band-limit starts blending crowded slices toward tone earlier.
     const lowDpr = ss > 1.01 ? 0 : Math.min(1, Math.max(0, 2 - dispDpr));
-    filMat.uniforms.uMinHalf.value = (AA.minHalf[1] + (AA.minHalf[0] - AA.minHalf[1]) * lowDpr) * ss;
-    filMat.uniforms.uBand.value.set((AA.band0[1] + (AA.band0[0] - AA.band0[1]) * lowDpr) * ss, (AA.band1[1] + (AA.band1[0] - AA.band1[1]) * lowDpr) * ss);
+    const minHalf = AA.minHalf[1] + (AA.minHalf[0] - AA.minHalf[1]) * lowDpr;
+    const band0 = AA.band0[1] + (AA.band0[0] - AA.band0[1]) * lowDpr, band1 = AA.band1[1] + (AA.band1[0] - AA.band1[1]) * lowDpr;
+    filMat.uniforms.uMinHalf.value = minHalf * ss;
+    filMat.uniforms.uBand.value.set(band0 * ss, band1 * ss);
+    // parked (display px against the band-limit ramp, which is in display px too before the supersampling factor)
+    lod.parked = P.parked !== undefined ? +P.parked : sstep(PARK[0], PARK[1], 1 - sstep(band0, band1, scanPx));
+    filMat.uniforms.uParked.value.x = lod.parked;
+    filMat.uniforms.uGrid.value.y = PARK_WIRE * minHalf;
     group.userData.lod = lod;
     // rings: counter-rotated 80 % against the rig (drag / pose), so the orbit system stays put while the head turns
     exc.set(-(state.pitch || 0) * 0.8, -(state.yaw || 0) * 0.8, 0, 'YXZ');
@@ -717,6 +892,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
     for (const o of [filaments, particles, marks, halo]) o.geometry.dispose();
     for (const m of mats) m.dispose();
     recTex.dispose();
+    stubTex.dispose();
   }
 
   return { group, update, tune, dispose, counts };

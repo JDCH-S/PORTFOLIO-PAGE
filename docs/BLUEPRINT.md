@@ -208,7 +208,7 @@ Sphere ↔ UI contract (already in `sphereStore.ts`): `pulseToward(x, y)`, `setL
 uniforms for the intro and reads `hover` from `siteStore` to lean toward a module.
 
 Hologram data choices (`scripts/hologram/pack_maps.py`): the flow map is lossy WebP (q 90; it only
-steers strands after a 16 px blur). The tone map ships at half resolution, box-filtered and quantised
+steers strands after a coherence-weighted smoothing of about 8 px). The tone map ships at half resolution, box-filtered and quantised
 to 32 grey levels, and is upsampled bilinearly by the loader: at full resolution it was in practice a
 clean greyscale portrait, while the builder only samples it 2.6-7.5 crop px apart. Front captures at
 1440x900 DPR 2 with the full and the reduced map differ by 0.5/255 on average (no visible change to

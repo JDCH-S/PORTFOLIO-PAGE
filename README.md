@@ -95,16 +95,33 @@ worker. **copy settings JSON** puts the current values on the clipboard.
 - **Geometry** (`hologram/builder.ts`, a pure function): horizontal contour slices of the measured
   depth surface whose width and brightness follow the tone like a line engraving, radial meridians
   and diagonals that turn the cheeks and forehead into a wireframe mesh, evenly spaced strands for
-  hair and brows, stubble ticks for the beard, landmark lines for lids, iris and lips, edge ridges,
-  a faint back-of-head shell for turned views, a short neck in the photo's proportions (its outline
-  is the skin mask's under the jaw, about 0.7 of the face width as in the photo, with straight sides
-  that only widen a touch below the chin; shaded as a rounded column from the depth surface, with
-  faint sternocleidomastoid cords and a larynx highlight; it is brightest just under the jaw, fades
-  on the way down and breaks into dashes and dust along the T-shirt collar's U, with no clothing or
-  shoulders; `?holo.neck=0` drops it and ends the head at the jaw in a short fringe of embers), dust /
-  neck-dissolve / node particles. Every point
-  is packed into a 32-byte record (vertex pulling from an RGBA32UI texture), with precomputed
-  horizon angles so the relief occludes itself without a depth buffer.
+  the brows, and the hair as it is in the photo, near-black: a few thin filaments on black (long
+  streamlines along the photo's own flow, sparse and dim in the dark body, closer and bright only in
+  the photo's sheen bands, their spacing bounded in device pixels so they neither merge into a brown
+  tone nor beat into moire) plus one thin contour on the silhouette, with a soft hairline where the
+  skin slices fade under the hair. The beard is short stubble: a mipmapped texture of fine dark hairs,
+  traced from the facial-hair map along the photo's own strand direction, that every skin filament
+  is multiplied by, plus a sprinkle of lit ticks. Landmark lines for lids, limbal ring and lips; the
+  eye sockets, irises and nostrils take their shading from the tone map (no under-eye retouch:
+  `?holo.ueyelift=0.6` is the old lift); edge ridges; for the turned views, which the front strands
+  cannot fill (head-on most of the hair is a steep wall seen edge-on), sweep strands combed straight
+  back down those walls and on over a faint back-of-head shell of swept-back strands that ends
+  raggedly at about the top of the ear, so the turned head keeps its hair as a dark coat of fine filaments
+  (shown only when turned and only where they face the viewer; the front view never changes); a
+  short neck in the photo's
+  proportions (its outline is the skin mask's under the jaw, about 0.7 of the face width as in the
+  photo, with straight sides that only widen a touch below the chin; shaded as a rounded column from
+  the depth surface, with faint sternocleidomastoid cords and a larynx highlight; it is brightest
+  just under the jaw, fades on the way down and breaks into dashes and dust along the T-shirt
+  collar's U, with no clothing or shoulders; `?holo.neck=0` drops it and ends the head at the jaw in
+  a short fringe of embers), dust / neck-dissolve / node particles. Every point is packed into a
+  32-byte record (vertex pulling from an RGBA32UI texture), with precomputed horizon angles so the
+  relief occludes itself without a depth buffer. The hair, the shell, the sweep strands, the stubble
+  texture and the limbal rings draw from their own random sub-streams, so tuning one never moves
+  another feature. The large sections (hair, stubble, back shell) are functions of their own inside
+  `buildFaceGeometry`: V8 does not optimise a function whose bytecode is over 60 KB, and with those
+  sections inline every loop in the body ran unoptimised (a 10-25 % slower build); keep its own
+  body under that (`node --print-bytecode --print-bytecode-filter=buildFaceGeometry`).
 - **Worker** (`hologram.worker.ts`, started by `createWorker.ts`): fetches and decodes the maps once
   (OffscreenCanvas), builds the tier's geometry (~1-2 s) and transfers the typed arrays back; it is
   released 30 s after a build (a later rebuild re-decodes from the HTTP cache). Without workers, or if
@@ -116,7 +133,18 @@ worker. **copy settings JSON** puts the current values on the clipboard.
   high and medium tiers render the canvas at the tier's DPR cap and let the browser filter it down
   (the slice pitch still follows the display), so the ~1 px filaments do not break into staircase
   dashes or moire. Turned views take the extra line density near the silhouette out of the
-  brightness, so the profile does not burn white at the yaw limit.
+  brightness, so the profile does not burn white at the yaw limit; the ear is laid on a regularised
+  depth with a rim that fades as the head turns, and the self-occlusion test narrows its soft band
+  and follows the view's own direction when yaw and pitch combine. Once a parked head's slices have
+  blended into tone (the 355 px section view; a phone whose canvas resolution was stepped down) the
+  skin stays a wire mesh, not a toned photograph: the diagonals and nodes go (alone with the
+  meridians they knit a herringbone), the meridians stay a little dimmer, and every 2nd or 4th scan
+  slice keeps a thin lit core over its tone, so the face carries a fine lat / long net at about the
+  meridian pitch (quieter on the coarser medium and low nets, and at twice the pitch once it would
+  close up under about 3.5 px); the hair of the turned views (shell and sweep strands) is drawn at
+  every size.
+  The halo fades behind the hair through a face-shaped window that follows the face as the head
+  turns, so the hair stays black.
 - `Effects.tsx` runs mipmap bloom on a half-float buffer followed by selectable tone mapping.
 - `SphereRig.tsx` carries the head: a small cursor / device-orientation lean, the clamped drag with
   its spring back, an idle sway (yaw 6° · sin 0.35t, pitch 2.5° · sin 0.27t), faint breathing, the
@@ -138,6 +166,6 @@ worker. **copy settings JSON** puts the current values on the clipboard.
   slice-pitch bucket (a window maximised, a move to a DPR-2 screen); a failed build unmounts the
   canvas and keeps the poster.
 
-Tiers (vertices at 1440x900 / DPR cap / bloom mip levels): high ~364k / 2 / 7 · medium ~267k / 1.5 /
-6 · low ~199k (phones ~176k) / 1.25 / 4. The slice pitch is chosen at build from the device pixels of
+Tiers (vertices at 1440x900 / DPR cap / bloom mip levels): high ~241k (~308k on a DPR-2 display) /
+2 / 7 · medium ~186k / 1.5 / 6 · low ~134k (phones ~114k) / 1.25 / 4. The slice pitch is chosen at build from the device pixels of
 the hero framing. A forced `?tier=` pins the tier. Tone mapping defaults to ACES.

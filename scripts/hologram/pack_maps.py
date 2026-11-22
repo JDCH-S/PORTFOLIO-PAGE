@@ -15,8 +15,8 @@ PNGs). Only DERIVED maps are written; the source photograph is never read or cop
   resolution it was in practice a clean greyscale portrait (a photo in all but name), while the builder only samples it
   bilinearly at scan points 2.6 to 7.5 crop px apart. The loader upsamples it bilinearly (meta.scale.tone). The render
   was compared against the full-resolution map before choosing this (see docs/BLUEPRINT.md).
-* flow.webp is lossy (quality FLOW_Q): it only steers strand directions, the hair field is smoothed with a 16 px
-  box blur before use, and it is 47 % uncorrelated noise outside the head that lossless coding would spend
+* flow.webp is lossy (quality FLOW_Q): it only steers strand directions, the hair field is smoothed (coherence-weighted,
+  about 8 px) before use, and it is 47 % uncorrelated noise outside the head that lossless coding would spend
   ~370 KB on. The render was compared against the lossless map before choosing this (see docs/BLUEPRINT.md).
 * luma.png is not shipped: the builder only used it to find the catchlight of each eye; that search is done here,
   exactly as the prototype did it, and stored in meta.catchlights.
