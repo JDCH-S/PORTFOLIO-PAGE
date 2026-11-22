@@ -51,7 +51,7 @@ const js = await build({
   write: false,
   logLevel: "warning",
   alias: { "@": path.join(root, "src"), "next/dynamic": path.join(here, "next-dynamic-shim.tsx") },
-  define: { "process.env.NODE_ENV": '"production"', __HOLOGRAM_WORKER_SOURCE__: JSON.stringify(workerSource) },
+  define: { "process.env.NODE_ENV": '"production"', "process.env.PREVIEW_DIAG": JSON.stringify(process.env.PREVIEW_DIAG ?? "0"), __HOLOGRAM_WORKER_SOURCE__: JSON.stringify(workerSource) },
   plugins: [swapWorker],
 });
 const script = js.outputFiles[0].text.replace(/<\/script/gi, "<\\/script");

@@ -36,6 +36,8 @@ declare global {
   interface Window {
     __sphereReady?: boolean;
     __sphereStats?: Record<string, unknown>;
+    /** the device's GL info logs when a shader program failed (the scene then falls back to the poster) */
+    __sphereShaderError?: { program: string; vertex: string; fragment: string };
     __sphereStore?: typeof useSphereStore;
     __sphereSpin?: typeof spin;
   }
@@ -328,6 +330,15 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
             // cleared to pure black and screen-blended over the page: screen(bg, black) = bg, so
             // no tone-map-dependent seam, and later phases can draw a grid behind the sphere
             gl.setClearColor("#000000", 1);
+            // a shader the device's GL rejects draws nothing: without this the head would be "ready" (frames render)
+            // but invisible, and the poster would fade out over an empty canvas. Fall back to the poster instead.
+            gl.debug.onShaderError = (ctx, program, vs, fs) => {
+              const log = (s: WebGLShader) => (ctx.getShaderParameter(s, ctx.COMPILE_STATUS) ? "" : ctx.getShaderInfoLog(s)?.trim() || "compile failed");
+              const detail = { program: ctx.getProgramInfoLog(program)?.trim() || "", vertex: log(vs), fragment: log(fs) };
+              window.__sphereShaderError = detail;
+              console.error("[hologram] shader program failed, showing the poster", detail);
+              onError();
+            };
           }}
         >
           <CameraFit />
