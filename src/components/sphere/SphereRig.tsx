@@ -133,6 +133,9 @@ export default function SphereRig({
       if (Math.abs(spin.yaw) < 1e-4 && Math.abs(spin.vYaw) < 1e-3) spin.yaw = spin.vYaw = 0;
       if (Math.abs(spin.pitch) < 1e-4 && Math.abs(spin.vPitch) < 1e-3) spin.pitch = spin.vPitch = 0;
     }
+    // (a non-finite pose would never recover through the springs, and would reach every shader as a NaN transform)
+    if (!Number.isFinite(spin.yaw + spin.pitch + spin.vYaw + spin.vPitch)) spin.yaw = spin.pitch = spin.vYaw = spin.vPitch = 0;
+    if (!Number.isFinite(cur.rx + cur.ry)) cur.rx = cur.ry = 0;
 
     // idle sway: the head is alive, never turning far
     const swayYaw = SWAY.yaw * look.sway * Math.sin(t * SWAY.yawRate);
@@ -144,6 +147,7 @@ export default function SphereRig({
 
     cur.ox = THREE.MathUtils.damp(cur.ox, store.offsetTarget[0], 4, real);
     cur.oy = THREE.MathUtils.damp(cur.oy, store.offsetTarget[1], 4, real);
+    if (!Number.isFinite(cur.ox + cur.oy)) cur.ox = cur.oy = 0;
     g.position.set(cur.ox, cur.oy, 0);
     // face the camera wherever the head is parked
     const camZ = Math.max(0.1, state.camera.position.z);
@@ -155,6 +159,7 @@ export default function SphereRig({
     const breathe = 1 + Math.sin(t * look.breatheSpeed * Math.PI * 2) * look.breatheAmount;
     const wantScale = store.scaleTarget * breathe * (1 + pulse * 0.04);
     cur.scale = THREE.MathUtils.damp(cur.scale, wantScale, 6, real);
+    if (!(Number.isFinite(cur.scale) && cur.scale > 0)) cur.scale = Number.isFinite(wantScale) && wantScale > 0 ? wantScale : 1;
     g.scale.setScalar(cur.scale);
 
     if (pulse > 0.001) useSphereStore.setState({ pulse: pulse * Math.exp(-real * 2.4) });

@@ -85,10 +85,13 @@ export const useSphereStore = create<SphereState>((set) => ({
   converge: 1,
   frame: null,
   building: false,
-  pulseToward: (x, y, strength = 1) => set({ pulse: Math.min(1, strength), pulseDir: [x, y] }),
-  setScaleTarget: (scaleTarget) => set({ scaleTarget }),
-  setOffsetTarget: (x, y) => set({ offsetTarget: [x, y] }),
-  setLeanTarget: (x, y) => set({ leanTarget: [x, y] }),
+  // (the rig integrates these with springs: one non-finite target would latch it at NaN for good, a NaN transform
+  // for every shader, so such a value is dropped here)
+  pulseToward: (x, y, strength = 1) =>
+    Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(strength) ? set({ pulse: Math.min(1, strength), pulseDir: [x, y] }) : undefined,
+  setScaleTarget: (scaleTarget) => (Number.isFinite(scaleTarget) && scaleTarget > 0 ? set({ scaleTarget }) : undefined),
+  setOffsetTarget: (x, y) => (Number.isFinite(x) && Number.isFinite(y) ? set({ offsetTarget: [x, y] }) : undefined),
+  setLeanTarget: (x, y) => (Number.isFinite(x) && Number.isFinite(y) ? set({ leanTarget: [x, y] }) : undefined),
   setStats: (fps, filaments) => set((s) => (s.fps === fps && s.filaments === filaments ? s : { fps, filaments })),
   setTier: (tier) => set({ tier }),
   setReady: (ready) => set({ ready }),

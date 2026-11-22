@@ -48,6 +48,8 @@ function CameraFit() {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   useEffect(() => {
+    // (a collapsed canvas would put the camera at z = 1 / 0: a NaN view matrix in every shader)
+    if (size.width < 1 || size.height < 1) return;
     const cam = camera as import("three").PerspectiveCamera;
     const aspect = size.width / Math.max(1, size.height);
     const vHalf = Math.tan((cam.fov * Math.PI) / 360);

@@ -20,7 +20,9 @@ const TONE: Record<SphereLook["toneMapping"], ToneMappingMode | null> = {
 function tuneBloom(bloom: BloomEffect, look: SphereLook, cheap: boolean) {
   bloom.intensity = cheap ? look.bloomIntensity * 0.85 : look.bloomIntensity;
   bloom.luminanceMaterial.threshold = look.bloomThreshold;
-  bloom.luminanceMaterial.smoothing = look.bloomSmoothing;
+  // smoothstep(threshold, threshold + smoothing, l): equal edges (smoothing 0, the panel's minimum) are 0 / 0 = NaN at
+  // l == threshold, straight into the bloom's mip chain (black squares); the floor never shows
+  bloom.luminanceMaterial.smoothing = Math.max(1e-3, look.bloomSmoothing);
   // the cheap tier has fewer mip levels, so a wider radius keeps the halo spreading
   bloom.mipmapBlurPass.radius = cheap ? Math.min(1, look.bloomRadius + 0.13) : look.bloomRadius;
   // cheap tier: keep the threshold (it defines the look) but run the luminance pass at half resolution

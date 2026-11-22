@@ -79,6 +79,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
   };
   const additive = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, toneMapped: false };
   const common = {
+    uExpMask: { value: 0x7f800000 }, // float exponent bits, for holoSafe (a uniform so the test cannot be folded)
     uTime: { value: 0 }, uAssemble: { value: 1 }, uIgnite: { value: 1 }, uConverge: { value: 1 }, uPulse: { value: 0 },
     uPxWorldPerDist: { value: 0.001 }, uDpr: { value: 1 }, uCamObj: { value: new THREE.Vector3(0, 0, 4) },
     uSweepY: { value: 2 }, uZ0: { value: -world.cz * S }, uRimW: { value: dbg('rimw', 0.035) }, uSS: { value: 1 },
@@ -88,6 +89,21 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
   // from / to] (see horizonVis and the shell branch)
   const TURN_VIS = [dbg('horsoft', 0.1), dbg('shellf0', 0.0), dbg('shellf1', 0.25), dbg('shelllimb', 0.45), dbg('shellturn0', 0.02), dbg('shellturn1', 0.14), dbg('earedge0', 0.02), dbg('earedge1', 0.14),
     dbg('hairturn0', 0.02), dbg('hairturn1', 0.13)].map((v) => v.toFixed(4));
+  // Every fragment output goes through holoSafe. One NaN or Inf pixel (a degenerate normalize, a 0 / 0 at some pose,
+  // an overflow) is spread by the bloom's mip chain into black squares that flicker for a frame or two (seen on
+  // iPhones: Apple GPUs keep NaNs where software GL and most desktop drivers happen to flush them). Best effort: the
+  // test is on the bit pattern (exponent all ones = NaN or Inf) rather than isnan() / isinf(), which a fast-math
+  // compiler (ANGLE's Metal backend) may fold to false, and the mask is a uniform (uExpMask = 0x7f800000) so the
+  // compiler cannot pattern-match the test either. The bad value is replaced first (a select; min / max / clamp of a
+  // NaN are undefined under fast math), then the finite rest is clamped. The cap is far above any real fragment
+  // (additive light, ~0 to 4), so it never changes the image. The real fix is at the sources (clamped pow bases,
+  // finite uniforms); this only keeps a missed one from reaching the bloom.
+  const GLSL_SAFE = /* glsl */ `
+    uniform uint uExpMask;
+    vec3 holoSafe(vec3 c) {
+      bvec3 bad = equal(floatBitsToUint(c) & uvec3(uExpMask), uvec3(uExpMask));
+      return clamp(mix(c, vec3(0.0), bad), vec3(0.0), vec3(64.0));
+    }`;
   const GLSL_VIS = /* glsl */ `
     uniform vec3 uCamObj;
     uniform float uZ0, uRimW;
@@ -415,6 +431,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         if (lodGain < 0.002) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       }`,
     fragmentShader: /* glsl */ `
+      ${GLSL_SAFE}
       uniform vec3 uBase, uHot, uDeep;
       uniform float uTime;
       uniform sampler2D uStub;
@@ -433,7 +450,9 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
       }
       void main() {
         float edge = 1.0 - smoothstep(0.3, 1.0, abs(vSide));
-        float run = pow(0.5 + 0.5 * sin(vU * 0.03 - uTime * 0.9 + vSeed * 40.0), 6.0);
+        // (every pow base below is clamped to 0..1: GLSL leaves pow undefined for a base < 0, and an approximate sin /
+        // cos at large arguments can land a hair below -1, so 0.5 + 0.5 * sin a hair below 0: NaN on Apple GPUs)
+        float run = pow(clamp(0.5 + 0.5 * sin(vU * 0.03 - uTime * 0.9 + vSeed * 40.0), 0.0, 1.0), 6.0);
         float i = vI * (0.96 + 0.1 * run);
         // stubble: fine dark hairs cut out of the skin filaments (sampled outside any branch: implicit derivatives)
         i *= 1.0 - vStub.z * texture2D(uStub, vStub.xy, uStubA.y).r;
@@ -441,7 +460,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         if (vM < 0.98) {
           float q = vU * 0.45 + vSeed * 17.0;
           float cell = floor(q), cf = fract(q);
-          float pk = pow(vM, 1.5);
+          float pk = pow(max(vM, 0.0), 1.5); // (vM can interpolate a hair below 0 on a triangle's edge)
           int ic = int(cell);
           uint sd = uint(vSeed * 65535.0);
           float h = hash(ic, sd, 0u);
@@ -449,7 +468,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
           float hn = hash(ic + 1, sd, 0u);
           float h2 = hash(ic, sd, 0x9e3779b9u);
           float keep = step(h, pk);
-          float dash = 1.0 - (1.0 - step(hn, pk)) * smoothstep(0.55, 1.0, cf) - (1.0 - step(hp, pk)) * smoothstep(0.45, 0.0, cf);
+          float dash = 1.0 - (1.0 - step(hn, pk)) * smoothstep(0.55, 1.0, cf) - (1.0 - step(hp, pk)) * (1.0 - smoothstep(0.0, 0.45, cf)); // (never reversed edges: undefined)
           float dotc = 0.25 + 0.5 * h2;
           float dotv = exp(-sq((cf - dotc) / mix(0.08, 0.3, vM)));
           i *= keep * mix(dotv, max(dash, 0.0), smoothstep(0.55, 0.92, vM)) * mix(0.5, 1.0, vM);
@@ -472,7 +491,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         col = mix(col, uHot, clamp(smoothstep(0.8, 1.5, lum) + 0.12 * vFront, 0.0, 1.0));
         // parked wire slices: a thin core at the ribbon's centre line, on top of the tone the ribbon carries
         float wire = vWire.x * (1.0 - smoothstep(0.5 * vWire.y, vWire.y, abs(vSide)));
-        gl_FragColor = vec4(col * lum * edge * vComp + col * lum * wire, 1.0);
+        gl_FragColor = vec4(holoSafe(col * lum * edge * vComp + col * lum * wire), 1.0);
       }`,
   });
   const filaments = new THREE.Mesh(filGeo, filMat);
@@ -515,7 +534,8 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
           p = vec3(c * p.x + s * p.z, p.y + 0.025 * sin(uTime * 0.3 + aInfo.y * 31.0), -s * p.x + c * p.z);
           p *= mix(2.3 + aInfo.z, 1.0, smoothstep(0.0, 1.0, uConverge));
           size = 0.0035 + 0.006 * aInfo.y * aInfo.y;
-          a = aInfo.w * (0.25 + 0.75 * pow(0.5 + 0.5 * sin(uTime * (0.5 + aInfo.z) + aInfo.y * 50.0), 3.0)) * 0.55;
+          // (base clamped: a NaN here makes the whole point sprite a NaN square, see the filaments' run)
+          a = aInfo.w * (0.25 + 0.75 * pow(clamp(0.5 + 0.5 * sin(uTime * (0.5 + aInfo.z) + aInfo.y * 50.0), 0.0, 1.0), 3.0)) * 0.55;
           a *= smoothstep(0.0, 0.3, uConverge);
           float inFace = (1.0 - smoothstep(0.75, 1.05, length(vec2(p.x / 0.5, (p.y - 0.06) / 0.78)))) * step(0.0, p.z);
           a *= 1.0 - 0.8 * inFace;
@@ -547,13 +567,14 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         if (kind > 8.5) { vA = 0.0; gl_PointSize = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }
       }`,
     fragmentShader: /* glsl */ `
+      ${GLSL_SAFE}
       uniform vec3 uBase, uHot;
       varying float vA, vHot;
       void main() {
         float d = length(gl_PointCoord - 0.5) * 2.0;
         float a = 1.0 - smoothstep(0.0, 1.0, d);
         a *= a;
-        gl_FragColor = vec4(mix(uBase, uHot, clamp(a * 0.6 + vHot, 0.0, 1.0)) * vA * a, 1.0);
+        gl_FragColor = vec4(holoSafe(mix(uBase, uHot, clamp(a * 0.6 + vHot, 0.0, 1.0)) * vA * a), 1.0);
       }`,
   });
   const particles = new THREE.Points(ptGeo, ptMat);
@@ -682,6 +703,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         vId = aInfo.z;
       }`,
     fragmentShader: /* glsl */ `
+      ${GLSL_SAFE}
       uniform vec3 uBase, uHot, uDeep;
       uniform float uTime;
       varying float vSide, vI, vT, vComp, vKind, vId;
@@ -690,14 +712,14 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         float i = vI;
         vec3 col = uBase;
         if (vKind < 0.5) {
-          float run = pow(0.5 + 0.5 * cos((vT - uTime * (0.03 + 0.01 * vId) - vId * 0.31) * 6.2831853), 60.0);
+          float run = pow(clamp(0.5 + 0.5 * cos((vT - uTime * (0.03 + 0.01 * vId) - vId * 0.31) * 6.2831853), 0.0, 1.0), 60.0); // (clamped base, see the filaments)
           float dash = mix(1.0, 0.35 + 0.65 * step(0.5, fract(vT * 140.0)), step(0.55, fract(vT * 2.0 + vId * 0.2)));
           i = i * (0.5 * dash + 3.0 * run);
           col = mix(uDeep * 0.6 + uBase * 0.4, uHot, run);
         } else if (vKind > 1.5 && vKind < 2.5) {
           col = mix(uBase, uHot, 0.4);
         }
-        gl_FragColor = vec4(col * i * edge * vComp, 1.0);
+        gl_FragColor = vec4(holoSafe(col * i * edge * vComp), 1.0);
       }`,
   });
   const marks = new THREE.Mesh(mkGeo, mkMat);
@@ -734,6 +756,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         gl_Position = projectionMatrix * c;
       }`,
     fragmentShader: /* glsl */ `
+      ${GLSL_SAFE}
       uniform vec3 uBase, uDeep;
       uniform float uIgnite, uPulse, uTime, uHalo, uAssemble;
       varying vec2 vP, vFace;
@@ -747,7 +770,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
         vec3 col = mix(uDeep, uBase, 0.35);
         // the halo only appears once the head is built (no glow ahead of the scan front during the intro)
         float gate = smoothstep(0.75, 1.0, uAssemble);
-        gl_FragColor = vec4(col * g * 0.05 * uHalo * breathe * (uIgnite * 0.85 + 0.15) * (1.0 + 0.8 * uPulse) * gate, 1.0);
+        gl_FragColor = vec4(holoSafe(col * g * 0.05 * uHalo * breathe * (uIgnite * 0.85 + 0.15) * (1.0 + 0.8 * uPulse) * gate), 1.0);
       }`,
   });
   const halo = new THREE.Mesh(haloGeo, haloMat);
@@ -770,6 +793,9 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
   // ------------------------------------------------------------------ per-frame
   const mats = [filMat, ptMat, mkMat, haloMat];
   const camLocal = new THREE.Vector3();
+  // the last camera position in the head's frame that was usable (finite, not at the pivot): every visibility term
+  // normalizes it, and a NaN or zero uCamObj would poison every filament of the frame
+  const camObj = new THREE.Vector3(0, 0, 4);
   const inv = new THREE.Matrix4();
   const m4 = new THREE.Matrix4();
   const mc = new THREE.Matrix4();
@@ -790,7 +816,11 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
   // blend at the nominal slice spacing (0 at every tier's full size; 1 at the 355 px section view, and on a phone whose
   // canvas resolution was stepped down under a head built for the higher one)
   const PARK = [dbg('park0', 0.35), dbg('park1', 0.85)];
-  const sstep = (a: number, b: number, v: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const sstep = (a: number, b: number, v: number) => {
+    if (!(b > a)) return v >= b ? 1 : 0; // (equal debug edges: no 0 / 0)
+    const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
   // the net's pitch (meridians, wire slices) doubles while it would be under NET_DOWN display px (hysteresis, crossfaded)
   const NET_DOWN = dbg('netdown', 3.5), NET_UP = dbg('netup', 4.0), PARK_WIRE = dbg('parkwire', 1.0);
   const lod = { scan: -1, scanF: 0, mer: -1, merF: 0, net: -1, netF: 0, parked: 0 };
@@ -800,7 +830,25 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
     while (L > 0 && spacing * 2 ** (L - 1) >= up) L--;
     return L;
   }
+  // A non-finite input (a degenerate transform, a bad debug value) must never reach a uniform: one NaN uniform makes
+  // every fragment of a draw NaN, which the bloom spreads into black squares. Normal values pass through unchanged.
+  const fin = (v: number, d: number) => (Number.isFinite(v) ? v : d);
+  function sanitize(s: HoloFrameState) {
+    s.time = fin(s.time, 0);
+    s.dt = fin(s.dt, 0);
+    s.assemble = fin(s.assemble, 1);
+    s.ignite = fin(s.ignite, 1);
+    s.converge = fin(s.converge, 1);
+    s.pulse = fin(s.pulse, 0);
+    s.pxWorld = fin(s.pxWorld, 1e-3);
+    s.pxWorldPerDist = Math.max(1e-9, fin(s.pxWorldPerDist, 1e-3)); // a divisor in every width / point-size term
+    s.dpr = Math.max(1e-3, fin(s.dpr, 1));
+    s.ss = fin(s.ss, 1);
+    s.yaw = fin(s.yaw, 0);
+    s.pitch = fin(s.pitch, 0);
+  }
   function update(state: HoloFrameState) {
+    sanitize(state);
     const ph = ((state.time + 2.2) % SWEEP_PERIOD) / SWEEP_PERIOD;
     const sweepT = ph / 0.45;
     const sweepY = sweepT <= 1 ? 1.0 - 2.05 * sweepT : 5.0;
@@ -810,6 +858,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
     group.updateWorldMatrix(true, false);
     inv.copy(group.matrixWorld).invert();
     camLocal.copy(state.camera.position).applyMatrix4(inv);
+    if (Number.isFinite(camLocal.x + camLocal.y + camLocal.z) && camLocal.lengthSq() > 1e-8) camObj.copy(camLocal);
     for (const m of mats) {
       const u = m.uniforms;
       u.uTime.value = state.time;
@@ -820,7 +869,7 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
       u.uPxWorldPerDist.value = state.pxWorldPerDist;
       u.uDpr.value = state.dpr;
       u.uSS.value = ss;
-      u.uCamObj.value.copy(camLocal);
+      u.uCamObj.value.copy(camObj);
       u.uSweepY.value = state.assemble < 1 ? 5.0 : sweepY;
     }
     // intro: the marks' scan line rides the scan front, so the head is visibly scanned into existence
