@@ -27,6 +27,13 @@ export interface HoloFrameState {
   dpr: number;
   /** render px per display px (> 1 when the canvas supersamples a low-DPR display): every px-sized footprint scales by it */
   ss: number;
+  /**
+   * What the supersampling is for. false / absent (the low-DPR desktops): it stands in for the low-DPR line widening,
+   * so the lines keep the designed DPR-2 footprints. true (phones, SphereScene's sharpening): only the resolution goes
+   * up; every footprint, the band-limit and the LOD stay those of the display DPR the head was built for, so the
+   * picture is the same one, drawn with finer pixels.
+   */
+  sharpen?: boolean;
   /** the rig's pose (drag + sway + tilt), radians: the orbitals counter-rotate against it */
   yaw: number;
   pitch: number;
@@ -902,8 +909,9 @@ export function createHologramObjects(out: BuildOutput, world: FaceWorld, meta: 
     // apart beat against the pixel grid (moire). A supersampled canvas (high / medium tiers, SphereScene) keeps the
     // designed footprints in display px and lets the browser's downscale filter them. Without it (low tier, ?holo.ss=0)
     // every line gets a wider minimum footprint below DPR 2 (energy compensated, so tone is unchanged) and the
-    // band-limit starts blending crowded slices toward tone earlier.
-    const lowDpr = ss > 1.01 ? 0 : Math.min(1, Math.max(0, 2 - dispDpr));
+    // band-limit starts blending crowded slices toward tone earlier. A sharpening canvas (phones) keeps the display
+    // DPR's widening: its supersampling adds resolution, not anti-aliasing.
+    const lowDpr = ss > 1.01 && !state.sharpen ? 0 : Math.min(1, Math.max(0, 2 - dispDpr));
     const minHalf = AA.minHalf[1] + (AA.minHalf[0] - AA.minHalf[1]) * lowDpr;
     const band0 = AA.band0[1] + (AA.band0[0] - AA.band0[1]) * lowDpr, band1 = AA.band1[1] + (AA.band1[0] - AA.band1[1]) * lowDpr;
     filMat.uniforms.uMinHalf.value = minHalf * ss;

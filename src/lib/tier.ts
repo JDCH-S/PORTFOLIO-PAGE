@@ -10,6 +10,11 @@ export interface Capabilities {
   webgl: boolean;
   coarsePointer: boolean;
   dpr: number;
+  /**
+   * A phone not known to be weak: on a DPR >= 2 screen its low-tier canvas may render above the tier's DPR for
+   * sharpness (SphereScene's sharpTop). Tablets and phones reporting <= 4 GB of memory (Android) keep the tier's DPR.
+   */
+  sharpen: boolean;
 }
 
 /** three r186 requires WebGL2; a WebGL1-only device gets the static poster. */
@@ -27,7 +32,7 @@ function hasWebGL(): boolean {
 
 export function detectCapabilities(): Capabilities {
   if (typeof window === "undefined") {
-    return { tier: "static", reducedMotion: false, webgl: false, coarsePointer: false, dpr: 1 };
+    return { tier: "static", reducedMotion: false, webgl: false, coarsePointer: false, dpr: 1, sharpen: false };
   }
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
@@ -35,7 +40,7 @@ export function detectCapabilities(): Capabilities {
   const dpr = window.devicePixelRatio || 1;
 
   if (!webgl || reducedMotion) {
-    return { tier: "static", reducedMotion, webgl, coarsePointer, dpr };
+    return { tier: "static", reducedMotion, webgl, coarsePointer, dpr, sharpen: false };
   }
 
   // Safari does not expose these; undefined means unknown, not weak
@@ -47,15 +52,18 @@ export function detectCapabilities(): Capabilities {
   const longSide = Math.max(window.innerWidth, window.innerHeight);
 
   let tier: QualityTier;
+  let sharpen = false;
   if (coarsePointer) {
     // Touch devices: phones are low, tablets are medium.
     const isPhone = shortSide < 600 || longSide < 900;
     tier = isPhone ? "low" : "medium";
     if (!isPhone && weak) tier = "low";
+    // (memory only: Safari does not expose it, and a core count is no guide to the GPU)
+    sharpen = isPhone && !(memory !== undefined && memory <= 4);
   } else {
     tier = weak ? "medium" : "high";
   }
-  return { tier, reducedMotion, webgl, coarsePointer, dpr };
+  return { tier, reducedMotion, webgl, coarsePointer, dpr, sharpen };
 }
 
 /** Allow ?tier=high|medium|low|static to force a tier for testing. */

@@ -42,6 +42,7 @@ function devBucket(width: number, height: number, dpr: number) {
 export default function FaceHologram({
   tier,
   pitchDpr,
+  sharpen = false,
   tune,
   timeOffset = 0,
   frozen = false,
@@ -51,6 +52,8 @@ export default function FaceHologram({
   tier: HoloTier;
   /** the DPR the slice pitch is built for (the display's; the canvas may render above it to supersample) */
   pitchDpr?: number;
+  /** the canvas renders above pitchDpr only for resolution (phones): footprints and glow stay the display's (see HoloFrameState) */
+  sharpen?: boolean;
   tune: HoloTune;
   timeOffset?: number;
   /** capture mode: the clock stands still at timeOffset (and the LOD snaps) */
@@ -142,7 +145,7 @@ export default function FaceHologram({
     // world units per CSS px at view distance 1, and in the head's own units on its plane (LOD)
     const perDist = (2 * Math.tan((cam.fov * Math.PI) / 360)) / (Math.max(1, state.size.height) * cam.zoom);
     const camDist = Math.max(0.1, cam.position.z);
-    const f = (frameState.current ??= { time: 0, dt: 0, assemble: 1, ignite: 1, converge: 1, pulse: 0, pxWorld: 1, pxWorldPerDist: 1, dpr: 1, ss: 1, yaw: 0, pitch: 0, camera: cam });
+    const f = (frameState.current ??= { time: 0, dt: 0, assemble: 1, ignite: 1, converge: 1, pulse: 0, pxWorld: 1, pxWorldPerDist: 1, dpr: 1, ss: 1, sharpen: false, yaw: 0, pitch: 0, camera: cam });
     f.time = time.current;
     f.dt = step;
     f.assemble = st.assemble;
@@ -153,6 +156,7 @@ export default function FaceHologram({
     f.pxWorldPerDist = perDist;
     f.dpr = state.gl.getPixelRatio();
     f.ss = pitchDpr ? Math.max(1, f.dpr / pitchDpr) : 1;
+    f.sharpen = sharpen;
     f.yaw = rigPose.yaw;
     f.pitch = rigPose.pitch;
     f.camera = cam;

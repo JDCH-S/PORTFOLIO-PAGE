@@ -3,7 +3,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { PerformanceMonitor } from "@react-three/drei";
 import type { QualityTier } from "@/lib/tier";
 import FaceHologram, { type HologramStats } from "@/components/hologram/FaceHologram";
 import { prefetchHologram, releaseHologramWorker } from "@/components/hologram/loadHologram";
@@ -20,6 +19,8 @@ const DebugPanel = dynamic(() => import("./DebugPanel"), { ssr: false });
 export interface SphereSceneProps {
   tier: Exclude<QualityTier, "static">;
   coarsePointer: boolean;
+  /** a phone not known to be weak (see Capabilities.sharpen): its canvas may render above the tier's DPR */
+  sharpen?: boolean;
   dpr: number;
   debug?: boolean;
   className?: string;
@@ -40,6 +41,8 @@ declare global {
     __sphereShaderError?: { program: string; vertex: string; fragment: string };
     __sphereStore?: typeof useSphereStore;
     __sphereSpin?: typeof spin;
+    /** the quality governor's state and its level changes (harness / review) */
+    __sphereQuality?: QualityLog;
   }
 }
 
@@ -148,7 +151,18 @@ function ContextGuard({ onLost, onRestored }: { onLost: () => void; onRestored: 
  * Readiness + live stats for the harness and the panel. Flips `visible` (and the store's `ready`, which starts the
  * intro) only once the hologram is built and two frames of it have rendered, so the poster stays up until then.
  */
-function Telemetry({ tier, built, frameCap, onReady }: { tier: Tier; built: HologramStats | null; frameCap: { readonly current: number }; onReady: () => void }) {
+/** the resolution handling, as Telemetry reports it */
+interface ResolutionStats {
+  /** the DPR the head's slice pitch is built for (the display's, within the tier's cap) */
+  pitchDpr: number;
+  /** "aa": a low-DPR desktop supersamples for anti-aliasing; "sharpen": a phone renders above pitchDpr for resolution */
+  supersampling: "none" | "aa" | "sharpen";
+  /** the quality governor's level (0 = the tier's start) and its floor */
+  level: number;
+  maxLevel: number;
+}
+
+function Telemetry({ tier, built, frameCap, res, onReady }: { tier: Tier; built: HologramStats | null; frameCap: { readonly current: number }; res: ResolutionStats; onReady: () => void }) {
   const gl = useThree((s) => s.gl);
   const frames = useRef(0);
   const acc = useRef(0);
@@ -180,6 +194,10 @@ function Telemetry({ tier, built, frameCap, onReady }: { tier: Tier; built: Holo
         triangles: gl.info.render.triangles,
         points: gl.info.render.points,
         dpr: gl.getPixelRatio(),
+        ...res,
+        // render px per display px (the shaders' uSS)
+        ss: +(gl.getPixelRatio() / res.pitchDpr).toFixed(3),
+        scanStep: built?.scanStep,
         // the browser's idle frame-rate cap (0 = not measured), which sets the performance monitor's decline bound
         frameCap: Math.round(frameCap.current),
         hologram: built,
@@ -202,16 +220,19 @@ function Caption({ tier, built }: { tier: Tier; built: HologramStats | null }) {
 /** idle frame intervals the cap estimate needs, and the most it keeps (~0.35 s and ~2 s at 30 fps) */
 const CAP_MIN_INTERVALS = 10;
 const CAP_MAX_INTERVALS = 60;
+/** a measured cap at or under this is a power-saving one (iOS Low Power Mode, Energy Saver: 30 fps) */
+const LOW_CAP_FPS = 35;
 
 /**
  * Measures the browser's own frame-rate cap while `active` (the render loop is off, so the GPU is idle) with an empty
  * rAF loop. iOS Low Power Mode, Chrome's Energy Saver and Safari on a Mac in Low Power Mode cap rAF at 30 fps; a normal
  * display reads 60 / 120. Main-thread stalls (canvas creation, shader compile) only lengthen some intervals, so the
  * cap is read from the shorter ones (the 25th percentile). Returns a ref holding the cap in fps (0 until enough
- * intervals were timed) and the performance monitor's bounds.
+ * intervals were timed), whether it is a power-saving cap (`lowCap`, state) and the governor's decline bound.
  */
 function useFrameCap(active: boolean) {
   const cap = useRef(0);
+  const [lowCap, setLowCap] = useState(false);
   const intervals = useRef<number[]>([]);
   useEffect(() => {
     const iv = intervals.current;
@@ -224,6 +245,7 @@ function useFrameCap(active: boolean) {
       if (iv.length >= CAP_MIN_INTERVALS) {
         const sorted = [...iv].sort((a, b) => a - b);
         cap.current = 1000 / Math.max(1, sorted[Math.floor(sorted.length / 4)]);
+        setLowCap(cap.current <= LOW_CAP_FPS);
       }
       if (iv.length < CAP_MAX_INTERVALS) raf = requestAnimationFrame(tick);
     };
@@ -234,22 +256,164 @@ function useFrameCap(active: boolean) {
   // with the GPU half idle, and a fixed 40 fps bound would read that as struggling and blur the head (DPR 1.25 -> 1).
   // Frame timing alone cannot tell that cap from a GPU that vsync-quantises to a steady 30 on a 60 Hz display, so the
   // cap is measured while nothing renders and declines fire below 80% of it (24 fps under a 30 cap). A 60 / 120 Hz
-  // browser, or an unmeasured cap, keeps the 40 fps bound; frames above 50 under load (drei's `refreshrate`, the
-  // fastest window so far) also prove there is no 30 cap. The bound never drops below 24, so a probe misread by heavy
-  // stalls cannot shield a device that really struggles. Incline also counts toward the monitor's flip-flops, so only
-  // declines may ever fire.
-  const bounds = useCallback((refreshrate: number): [number, number] => {
+  // browser, or an unmeasured cap, keeps the 40 fps bound; frames above 50 under load (the governor's `refreshrate`,
+  // the fastest window so far) also prove there is no 30 cap. The bound never drops below 24, so a probe misread by
+  // heavy stalls cannot shield a device that really struggles.
+  const declineBound = useCallback((refreshrate: number) => {
     const limit = cap.current > 0 && refreshrate < 50 ? cap.current : Number.POSITIVE_INFINITY;
-    return [Math.min(40, Math.max(24, 0.8 * limit)), Number.POSITIVE_INFINITY];
+    return Math.min(40, Math.max(24, 0.8 * limit));
   }, []);
-  return { cap, bounds };
+  return { cap, lowCap, declineBound };
+}
+
+export interface QualityLog {
+  level: number;
+  /** declines per level (index = the level that declined): a level with MAX_FAILS of them is never stepped up to */
+  fails: number[];
+  /** level changes: page time (ms), the new level, why, the window's fps and the decline bound */
+  changes: { t: number; level: number; why: "decline" | "recover" | "fallback"; fps: number; bound: number }[];
+}
+
+// The governor samples like drei's PerformanceMonitor did (ten 250 ms windows; a decline when more than 75 % of them
+// are under the bound), so desktops step down exactly as before.
+const WINDOW_MS = 250;
+const WINDOWS = 10;
+const DECLINE_SHARE = 0.75;
+/**
+ * a frame interval this long right after normal ones is a pause (the loop stopped off screen, a hidden tab), not a slow
+ * frame: the windows restart. A run of them is a device that really is that slow (under 2 fps: software GL, a VM),
+ * and those count, as they did for drei, so it still steps down and falls back a tier.
+ */
+const GAP_MS = 500;
+/** after a drag, its coast and the spring back to front, frames count again only after this long */
+const DRAG_QUIET_MS = 1000;
+/** recovery: every window for this long at HEADROOM x the decline bound (capped just under the fastest window seen) */
+const RECOVER_MS = 20000;
+const HEADROOM = 1.25;
+/** a level that declined this many times is never stepped up to again (so each level gets one retry at most) */
+const MAX_FAILS = 2;
+
+/** the head is being dragged, coasts or springs back (SphereRig snaps it to exactly 0 once it has settled) */
+function spinMoving() {
+  return spin.active || spin.yaw !== 0 || spin.pitch !== 0 || spin.vYaw !== 0 || spin.vPitch !== 0;
+}
+
+/**
+ * Frame-rate governor (in place of drei's PerformanceMonitor): moves the scene's quality `level` one step down
+ * (`onLevel(level + 1)`) when frames are sustainedly under the decline bound, and back up (`upLevel`) after sustained
+ * headroom; a decline at `maxLevel` is the fallback (a lower tier), after which it stops, as the monitor did.
+ * - Drags do not count: turning the head brings in the back-of-head shell and sweep strands, a short honest dip that
+ *   must not cost the head its resolution for good. Frames are ignored while the head is held, coasts or springs back,
+ *   and for DRAG_QUIET_MS after. Frames also do not count while `active` is off (the GL context is lost: nothing
+ *   renders, so they would read as headroom).
+ * - Recovery is a retry, not a measurement: under a vsync cap a level that holds 60 fps reads the same whether the
+ *   level above would make it or not. So it is rare and bounded: it needs RECOVER_MS of windows well above the bound
+ *   (HEADROOM, so a level that just made the bound does not count), and each level is retried at most once (MAX_FAILS
+ *   declines bar it for good). A device on the edge between two levels therefore switches at most twice more, and a
+ *   transient load (the page still busy at start, another tab) still gets its resolution back.
+ */
+function QualityGovernor({
+  active,
+  level,
+  upLevel,
+  maxLevel,
+  declineBound,
+  onLevel,
+  onFallback,
+}: {
+  active: boolean;
+  level: number;
+  /** where a recovery goes (the next level up that renders differently) */
+  upLevel: number;
+  maxLevel: number;
+  declineBound: (refreshrate: number) => number;
+  onLevel: (level: number) => void;
+  onFallback: () => void;
+}) {
+  const g = useRef({ frames: [] as number[], windows: [] as number[], last: -1, prevDt: 0, refreshrate: 0, quietUntil: 0, roomSince: -1, done: false });
+  const log = useRef<QualityLog>({ level, fails: [], changes: [] });
+  useEffect(() => {
+    const l = log.current;
+    window.__sphereQuality = l;
+    return () => {
+      if (window.__sphereQuality === l) delete window.__sphereQuality;
+    };
+  }, []);
+  useEffect(() => {
+    // a new level is judged on its own frames
+    const s = g.current;
+    s.frames.length = 0;
+    s.windows.length = 0;
+    s.roomSince = -1;
+    log.current.level = level;
+  }, [level]);
+  useFrame(() => {
+    const s = g.current;
+    if (s.done) return;
+    const now = performance.now();
+    const dt = s.last >= 0 ? now - s.last : 0;
+    s.last = now;
+    const pause = dt > GAP_MS && s.prevDt <= GAP_MS;
+    s.prevDt = dt;
+    if (spinMoving()) s.quietUntil = now + DRAG_QUIET_MS;
+    if (!active || now < s.quietUntil || pause) {
+      s.frames.length = 0;
+      s.windows.length = 0;
+      s.roomSince = -1;
+      return;
+    }
+    s.frames.push(now);
+    const span = now - s.frames[0];
+    if (span < WINDOW_MS) return;
+    const fps = Math.round((s.frames.length / span) * 1000);
+    s.frames.length = 0;
+    s.refreshrate = Math.max(s.refreshrate, fps);
+    const bound = declineBound(s.refreshrate);
+    const fails = log.current.fails;
+    const change = (to: number, why: QualityLog["changes"][number]["why"]) => {
+      log.current.changes.push({ t: Math.round(now), level: to, why, fps, bound });
+      if (log.current.changes.length > 64) log.current.changes.shift();
+    };
+    // recovery: sustained headroom steps back up (never above the tier's start, level 0). Headroom is HEADROOM x the
+    // bound, or just under the fastest window seen where a frame cap is lower than that (iOS Low Power Mode: 30 fps
+    // against a 24 bound), but never less than 10 % above the bound: a level that only just makes it is no headroom.
+    const room = Math.max(bound * 1.1, Math.min(bound * HEADROOM, 0.92 * s.refreshrate));
+    if (level > 0 && (fails[upLevel] ?? 0) < MAX_FAILS && fps >= room) {
+      if (s.roomSince < 0) s.roomSince = now - span;
+      if (now - s.roomSince >= RECOVER_MS) {
+        s.roomSince = -1;
+        change(upLevel, "recover");
+        onLevel(upLevel);
+        return;
+      }
+    } else {
+      s.roomSince = -1;
+    }
+    s.windows.push(fps);
+    if (s.windows.length < WINDOWS) return;
+    const slow = s.windows.filter((v) => v < bound).length;
+    s.windows.length = 0;
+    if (slow <= WINDOWS * DECLINE_SHARE) return;
+    fails[level] = (fails[level] ?? 0) + 1;
+    if (level >= maxLevel) {
+      s.done = true;
+      change(level, "fallback");
+      onFallback();
+    } else {
+      change(level + 1, "decline");
+      onLevel(level + 1);
+    }
+  });
+  return null;
 }
 
 const TONES: ToneMode[] = ["none", "aces", "agx", "neutral"];
 /** full-resolution half-float passes get expensive above this many canvas pixels */
 const PIXEL_BUDGET = 4.5e6;
+/** the DPR a phone's canvas sharpens to (see sharpTop): 2.6x the pixels of the low tier's 1.25 */
+const SHARP_DPR = 2;
 
-export default function SphereScene({ tier: initialTier, coarsePointer, dpr, debug = false, className = "", blend = true, spin: spinHere = false }: SphereSceneProps) {
+export default function SphereScene({ tier: initialTier, coarsePointer, sharpen = false, dpr, debug = false, className = "", blend = true, spin: spinHere = false }: SphereSceneProps) {
   const drag = useSpinDrag({ allowPitch: !coarsePointer });
   const query = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const captureMode = !!query?.has("capture");
@@ -260,7 +424,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   // ?capture&freeze stops every clock at ?t= and holds the head still and front-on (poster capture)
   const frozen = captureMode && !!query?.has("freeze");
   const toneParam = query?.get("tone");
-  // ?holo.ss=0 turns the low-DPR supersampling off (comparison)
+  // ?holo.ss=0 turns the low-DPR supersampling and the phones' sharpening off (comparison)
   const ssOff = query?.get("holo.ss") === "0";
   const initialLook = useMemo<SphereLook>(() => {
     const l = toneParam && TONES.includes(toneParam as ToneMode) ? { ...DEFAULT_LOOK, toneMapping: toneParam as ToneMode } : DEFAULT_LOOK;
@@ -326,18 +490,21 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   const onWarm = useCallback(() => setWarm(true), []);
   const onInView = useCallback((v: boolean) => setInView(v), []);
   const frameloop = warm && inView && built && !failed ? "always" : "never";
-  // runtime regression: if frames drop, lower the pixel ratio, then the tier
-  const [dprScale, setDprScale] = useState(1);
-  const onDecline = useCallback(() => setDprScale((s) => Math.max(0.6, s * 0.8)), []);
+  // runtime regression: if frames drop, the governor steps the quality level down (lower resolution, see below), then
+  // the tier; with headroom again it steps back up
+  const [level, setLevel] = useState(0);
   const onFallback = useCallback(() => setTier((t) => (t === "high" ? "medium" : "low")), []);
   const showDebug = debug && !captureMode;
-  // the performance monitor only starts after warm-up (shader compile, poster cross-fade)
+  // the governor only starts after warm-up (shader compile, poster cross-fade)
   const [monitor, setMonitor] = useState(false);
   useEffect(() => {
     if (!visible) return;
     const id = setTimeout(() => setMonitor(true), 2500);
     return () => clearTimeout(id);
   }, [visible]);
+  // declines are judged against the browser's idle frame-rate cap (iOS Low Power Mode: 30 fps), measured until the
+  // governor starts
+  const { cap: frameCap, lowCap, declineBound } = useFrameCap(frameloop === "never" && !monitor);
   const onLost = useCallback(() => setVisible(false), []);
   const onRestored = useCallback(() => setVisible(true), []);
   // pixel budget: retina / 4K desktops must not push 5-15 Mpx through the half-float post chain
@@ -346,17 +513,46 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
     const css = window.innerWidth * window.innerHeight;
     return Math.max(1, Math.sqrt(PIXEL_BUDGET / Math.max(1, css)));
   });
-  const maxDpr = Math.max(1, Math.min(budget.dpr[1], dpr, budgetDpr) * dprScale);
+  // Sharpening on phones (the low tier on a DPR >= 2 touch screen): the head is built and drawn for the tier's DPR
+  // (1.25: slice pitch, line footprints, LOD, glow), and on a 3x screen a 1.25 canvas is magnified 2.4x by the browser,
+  // which reads as soft next to the crisp poster. The canvas renders above it (up to SHARP_DPR, within the pixel
+  // budget) while pitchDpr, every footprint (HoloFrameState.sharpen) and the glow's mip chain (Effects' glowScale) stay
+  // those of the tier's DPR: the same picture with finer pixels. Only for a page that starts on the low tier, so a
+  // fallback from a higher tier never turns it on; only on phones not known to be weak (Capabilities.sharpen: no
+  // tablets, no <= 4 GB Android phones); and not under a power-saving frame cap (iOS Low Power Mode, which also lowers
+  // the GPU clock: 2.6x the pixels is the opposite of what was asked for, and at a 30 fps cap the governor cannot see
+  // a level that only manages 20). The cap is measured before the loop starts, so the canvas starts at the tier's DPR.
+  const sharpTop = initialTier === "low" && coarsePointer && sharpen && !lowCap && dpr >= 2 && !ssOff ? Math.min(SHARP_DPR, dpr, budgetDpr) : 0;
+  const baseDpr = Math.min(budget.dpr[1], dpr, budgetDpr);
+  // Quality levels: the sharpening's steps come first (2 -> 1.6 on a phone; a step must stay 1.25x above the base to be
+  // worth its pixels), then the base DPR's (x 0.8 each, floor 0.6 of the tier's cap, as before). Desktops have no
+  // sharpening steps, so their ladder is the old one: 1, 0.8, 0.64, 0.6, then the tier fallback.
+  let sharpSteps = 0;
+  while (sharpTop * 0.8 ** sharpSteps >= baseDpr * 1.25) sharpSteps++;
+  const maxLevel = sharpSteps + 3;
   // supersampling on low-DPR displays (high / medium tiers): ~1 px filaments sampled at pixel centres break into
   // staircase dashes and the slice stack beats against the pixel grid (moire). The canvas renders at the tier's DPR cap
   // (within the pixel budget) and the browser box-filters it down; the slice pitch still follows the display (pitchDpr),
-  // so the head looks as designed for DPR 1, only anti-aliased. The performance monitor's declines lower it first.
-  const ssDpr = Math.min(budget.dpr[1], budgetDpr) * dprScale;
-  const supersample = tier !== "low" && dpr < 1.5 && !ssOff && ssDpr >= dpr * 1.25 ? ssDpr : 0;
-  const pitchDpr = Math.min(dpr, maxDpr);
-  // declines are judged against the browser's idle frame-rate cap (iOS Low Power Mode: 30 fps), measured until the
-  // monitor starts
-  const { cap: frameCap, bounds: monitorBounds } = useFrameCap(frameloop === "never" && !monitor);
+  // so the head looks as designed for DPR 1, only anti-aliased. The governor's declines lower it first.
+  const resolutionAt = (l: number) => {
+    const dprScale = Math.max(0.6, 0.8 ** Math.max(0, l - sharpSteps));
+    const sharpDpr = l < sharpSteps ? sharpTop * 0.8 ** l : 0;
+    const maxDpr = Math.max(1, baseDpr * dprScale);
+    const ssDpr = Math.min(budget.dpr[1], budgetDpr) * dprScale;
+    const supersample = tier !== "low" && dpr < 1.5 && !ssOff && ssDpr >= dpr * 1.25 ? ssDpr : 0;
+    const pitchDpr = Math.min(dpr, maxDpr);
+    const canvasDpr = supersample || sharpDpr || Math.min(Math.max(budget.dpr[0], dpr), maxDpr);
+    return { sharpDpr, maxDpr, supersample, pitchDpr, canvasDpr };
+  };
+  const { sharpDpr, maxDpr, supersample, pitchDpr, canvasDpr } = resolutionAt(level);
+  // a recovery goes to the nearest level above that actually renders differently (the lowest levels can all clamp to
+  // DPR 1: they only count down to the tier fallback)
+  let upLevel = Math.max(0, level - 1);
+  while (upLevel > 0 && resolutionAt(upLevel).canvasDpr === canvasDpr && resolutionAt(upLevel).pitchDpr === pitchDpr) upLevel--;
+  const res = useMemo<ResolutionStats>(
+    () => ({ pitchDpr, supersampling: supersample ? "aa" : sharpDpr ? "sharpen" : "none", level, maxLevel }),
+    [pitchDpr, supersample, sharpDpr, level, maxLevel],
+  );
 
   return (
     <div
@@ -371,7 +567,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
       {failed ? null : (
       <div className={`absolute inset-0 ${blend ? "mix-blend-screen" : ""} transition-opacity duration-700 ease-out ${visible ? "opacity-100" : "opacity-0"}`}>
         <Canvas
-          dpr={supersample ? supersample : [budget.dpr[0], maxDpr]}
+          dpr={supersample || sharpDpr ? canvasDpr : [budget.dpr[0], maxDpr]}
           camera={{ fov: 40, near: 0.1, far: 50, position: [0, 0, 3.8] }}
           gl={{ antialias: false, alpha: false, powerPreference: "high-performance", stencil: false, depth: false }}
           flat
@@ -395,14 +591,14 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
           <CameraFit />
           <SphereFraming />
           <ContextGuard onLost={onLost} onRestored={onRestored} />
-          {!pinned && monitor ? <PerformanceMonitor bounds={monitorBounds} flipflops={3} onDecline={onDecline} onFallback={onFallback} /> : null}
+          {!pinned && monitor ? <QualityGovernor active={visible} level={level} upLevel={upLevel} maxLevel={maxLevel} declineBound={declineBound} onLevel={setLevel} onFallback={onFallback} /> : null}
           <Suspense fallback={null}>
             <SphereRig look={look} coarsePointer={coarsePointer} timeOffset={timeOffset} frozen={frozen}>
-              <FaceHologram tier={tier} pitchDpr={pitchDpr} tune={tune} timeOffset={timeOffset} frozen={frozen} onBuilt={onBuilt} onError={onError} />
+              <FaceHologram tier={tier} pitchDpr={pitchDpr} sharpen={!!sharpDpr} tune={tune} timeOffset={timeOffset} frozen={frozen} onBuilt={onBuilt} onError={onError} />
             </SphereRig>
-            <Effects look={look} budget={budget} />
+            <Effects look={look} budget={budget} glowScale={sharpDpr ? pitchDpr / sharpDpr : 1} />
           </Suspense>
-          <Telemetry tier={tier} built={built} frameCap={frameCap} onReady={onReady} />
+          <Telemetry tier={tier} built={built} frameCap={frameCap} res={res} onReady={onReady} />
           <VisibilityGate enabled={visible} onChange={onInView} />
           <Warmup onWarm={onWarm} />
         </Canvas>

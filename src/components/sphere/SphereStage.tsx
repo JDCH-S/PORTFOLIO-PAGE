@@ -63,5 +63,5 @@ export default function SphereStage({ debug = false, className, blend = true, sp
   if (caps.tier === "static") return <StaticSphere className={className} />;
   if (!idle) return <StaticSphere loading className={className} />;
 
-  return <SphereScene tier={caps.tier} coarsePointer={caps.coarsePointer} dpr={caps.dpr} debug={debug} className={className} blend={blend} spin={spin} />;
+  return <SphereScene tier={caps.tier} coarsePointer={caps.coarsePointer} sharpen={caps.sharpen} dpr={caps.dpr} debug={debug} className={className} blend={blend} spin={spin} />;
 }

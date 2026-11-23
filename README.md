@@ -151,7 +151,10 @@ worker. **copy settings JSON** puts the current values on the clipboard.
   120 px head or a 40 px emblem reads as continuous tone instead of moire). On low-DPR displays the
   high and medium tiers render the canvas at the tier's DPR cap and let the browser filter it down
   (the slice pitch still follows the display), so the ~1 px filaments do not break into staircase
-  dashes or moire. Turned views take the extra line density near the silhouette out of the
+  dashes or moire. Phones (the low tier on a DPR >= 2 touch screen; not tablets, not Android
+  phones reporting <= 4 GB, not under a 30 fps Low Power Mode cap) render the canvas at DPR 2 for
+  sharpness while the slice pitch, every line footprint and the glow's mip chain stay those of the
+  tier's DPR 1.25: the same picture with finer pixels. Turned views take the extra line density near the silhouette out of the
   brightness, so the profile does not burn white at the yaw limit; the ear is laid on a regularised
   depth with a rim that fades as the head turns, and the self-occlusion test narrows its soft band
   and follows the view's own direction when yaw and pitch combine. Once a parked head's slices have
@@ -180,9 +183,14 @@ worker. **copy settings JSON** puts the current values on the clipboard.
   loop (frames rendered into the hidden canvas while the worker builds only queue GPU work: on
   software GL that stalled the first head frame by 13-50 s), flips readiness (which
   starts the intro) only after the head exists and two frames of it have rendered, pauses the loop
-  while the canvas is scrolled out of view, caps the pixel ratio to a ~4.5 Mpx budget, and steps the
-  pixel ratio and then the tier down if frames drop (the tier drop rebuilds in the worker while the
-  old head stays on screen). The head also rebuilds once when the canvas grows past the next
+  while the canvas is scrolled out of view, caps the pixel ratio to a ~4.5 Mpx budget, and runs a small
+  frame-rate governor: if frames drop it steps a phone's sharpening down first, then the pixel ratio,
+  then the tier (the tier drop rebuilds in the worker while the old head stays on screen); frames
+  while the head is dragged, coasts or springs back (and 1 s after) do not count, and after 20 s of
+  clear headroom it steps back up (never above the start; each level is retried at most once, so a
+  device on the edge settles after one retry). A lone long frame interval (the loop paused off
+  screen, a hidden tab) restarts the sampling, but a run of them (a device under 2 fps) counts, and
+  nothing is sampled while the GL context is lost. The head also rebuilds once when the canvas grows past the next
   slice-pitch bucket (a window maximised, a move to a DPR-2 screen); a failed build unmounts the
   canvas and keeps the poster.
 
