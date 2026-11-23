@@ -18,6 +18,7 @@ import SystemsModule from "@/components/modules/SystemsModule";
 import AboutModule from "@/components/modules/AboutModule";
 import OptionRow from "./OptionRow";
 import ThumbLine, { THUMB_LINE_HEIGHT } from "./ThumbLine";
+import { EMBLEM, EMBLEM_GAP, emblemCentre } from "./emblem";
 
 const PANES: Record<ModuleId, React.ComponentType<{ className?: string; compact?: boolean }>> = {
   projects: ProjectsModule,
@@ -27,11 +28,19 @@ const PANES: Record<ModuleId, React.ComponentType<{ className?: string; compact?
   about: AboutModule,
 };
 const N = sectionIds.length;
-const EMBLEM = 40;
+/** how long the emblem slot takes to open or close around an open item (the sphere glides there meanwhile); the
+ * slot's duration-[480ms] class matches it */
+const SLOT_EASE_MS = 480;
 /** how much of the next section shows at the right edge: a hint that the panes swipe (it fades out
  * below the section's top, so it never ends as a stray edge mid-page) */
 const PEEK = 12;
 const SPRING = { type: "spring", stiffness: 300, damping: 34 } as const;
+
+/** How far the section hero has passed under the sticky header: 0 (none of it) to 1 (all of it, or no hero). */
+function dockProgress(head: HTMLElement, hero: DOMRect): number {
+  if (hero.height <= 1) return 1;
+  return Math.min(1, Math.max(0, (head.getBoundingClientRect().bottom - hero.top) / hero.height));
+}
 
 /**
  * Mobile. Home: the name over the hologram. Sections: a compact sphere with the five
@@ -85,15 +94,9 @@ export default function MobileLayout() {
       // section view: dock into the header emblem while the hero passes under the header
       const head = header.current;
       if (!head) return;
-      const er = head.getBoundingClientRect();
-      const safeTop = parseFloat(getComputedStyle(head).paddingTop) || 0;
       // where the emblem's centre ends up once it is fully open (computed from the header, not the emblem, so no feedback loop)
-      const ex = er.left + 16 + EMBLEM / 2;
-      const ey = er.top + safeTop + 8 + EMBLEM / 2;
-      const top = er.bottom;
-      const span = Math.max(1, hr.height);
-      const p = hr.height <= 1 ? 1 : Math.min(1, Math.max(0, (top - hr.top) / span));
-      const t = 1 - Math.pow(1 - p, 2);
+      const { x: ex, y: ey } = emblemCentre(head);
+      const t = 1 - Math.pow(1 - dockProgress(head, hr), 2);
       head.style.setProperty("--dock", t.toFixed(3));
       sphere.setFrame({
         x: hr.left + hr.width / 2 + (ex - (hr.left + hr.width / 2)) * t,
@@ -113,14 +116,82 @@ export default function MobileLayout() {
         push();
       });
     };
+    // A dock left half-way (a scroll that stops there, focus brought back to a card after an item) leaves a
+    // large sphere over the name and the tabs. Once the scroll settles, the dock finishes in the direction the
+    // page was going, like a collapsing title bar: the hero above the section is only the sphere's room.
+    let settle = 0;
+    let touching = false;
+    let lastY = window.scrollY;
+    let dir = 1;
+    const finishDock = () => {
+      settle = 0;
+      const h = hero.current;
+      const head = header.current;
+      if (touching || !h || !head) return;
+      const hr = h.getBoundingClientRect();
+      const p = dockProgress(head, hr);
+      if (hr.height <= 1 || p <= 0.005 || p >= 0.995) return;
+      const top = Math.max(0, window.scrollY + (dir < 0 ? -p : 1 - p) * hr.height);
+      // a section too short to dock all the way stays where it was left
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (top > max + 2) return;
+      window.scrollTo({ top: Math.min(top, max), behavior: reduced ? "auto" : "smooth" });
+    };
+    const settleLater = () => {
+      window.clearTimeout(settle);
+      settle = window.setTimeout(finishDock, 160);
+    };
+    const onScrollSettle = () => {
+      const y = window.scrollY;
+      if (y !== lastY) dir = Math.sign(y - lastY);
+      lastY = y;
+      settleLater();
+    };
+    const onTouchStart = () => {
+      touching = true;
+      window.clearTimeout(settle);
+    };
+    const onTouchEnd = () => {
+      touching = false;
+      settleLater();
+    };
+    if (view === "module") {
+      window.addEventListener("scroll", onScrollSettle, { passive: true });
+      window.addEventListener("touchstart", onTouchStart, { passive: true });
+      window.addEventListener("touchend", onTouchEnd, { passive: true });
+      window.addEventListener("touchcancel", onTouchEnd, { passive: true });
+      // the page may already rest half-docked (back from an item)
+      settleLater();
+    }
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(settle);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      window.removeEventListener("scroll", onScrollSettle);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchend", onTouchEnd);
+      window.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, [phase, view]);
+  }, [phase, view, reduced]);
+
+  // an open item parks the sphere in the emblem wherever the page was scrolled (DetailView sets that frame): the slot
+  // opens all the way so the name and role move aside instead of sitting under it, and on close it eases back to the
+  // scroll's dock while the sphere glides back, then follows the scroll directly again
+  useEffect(() => {
+    const head = header.current;
+    if (!head) return;
+    if (phase === "detail") {
+      head.dataset.slotEase = "";
+      head.style.setProperty("--dock", "1");
+      return;
+    }
+    if (head.dataset.slotEase === undefined) return;
+    const t = window.setTimeout(() => delete head.dataset.slotEase, SLOT_EASE_MS);
+    return () => window.clearTimeout(t);
+  }, [phase]);
 
   // one pane = the track's width minus the peek
   useEffect(() => {
@@ -311,7 +382,13 @@ export default function MobileLayout() {
       {/* sticky header: emblem (opens as the sphere docks) + name + tabs */}
       <header ref={header} className="sticky top-0 z-20 bg-bg border-b border-steel-line" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         <div className="flex items-center px-4 py-2">
-          <div data-emblem aria-hidden className="h-10 shrink-0" style={{ width: `calc(var(--dock, 0) * ${EMBLEM}px)`, marginRight: "calc(var(--dock, 0) * 12px)" }} />
+          {/* the slot opens with the dock (fully while an item is open), so the name always sits beside the parked sphere */}
+          <div
+            data-emblem
+            aria-hidden
+            className="h-10 shrink-0 [[data-slot-ease]_&]:transition-[width,margin-right] [[data-slot-ease]_&]:duration-[480ms] [[data-slot-ease]_&]:ease-[var(--ease-out)]"
+            style={{ width: `calc(var(--dock, 0) * ${EMBLEM}px)`, marginRight: `calc(var(--dock, 0) * ${EMBLEM_GAP}px)` }}
+          />
           {nameBlock("sm")}
         </div>
         <nav

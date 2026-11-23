@@ -10,6 +10,7 @@ import { useIsDesktop, useReducedMotion } from "@/lib/useMediaQuery";
 import { stepItem, up } from "@/lib/nav";
 import Brackets from "@/components/hud/Brackets";
 import Kbd from "@/components/ui/Kbd";
+import { EMBLEM, emblemCentre } from "@/components/site/emblem";
 import DetailSections from "./DetailSections";
 
 const text = "label flex h-11 items-center gap-2 transition-colors duration-[240ms]";
@@ -90,11 +91,9 @@ export default function DetailView() {
       // the left margin beside the overlay, below the header row
       sphere.setFrame({ x: Math.max(48, window.innerWidth * 0.04), y: window.innerHeight * 0.09 + 56, size: 76 });
     } else {
-      // shrink into the header emblem, which stays visible above the sheet
-      const emblem = document.querySelector<HTMLElement>("[data-emblem]");
-      const head = emblem?.closest("header")?.getBoundingClientRect();
-      if (head) sphere.setFrame({ x: head.left + 16 + 20, y: head.top + 8 + 20, size: 40 });
-      else sphere.setFrame({ x: 36, y: 36, size: 40 });
+      // shrink into the header emblem, which stays visible above the sheet (MobileLayout opens its slot meanwhile)
+      const head = document.querySelector<HTMLElement>("[data-emblem]")?.closest("header");
+      sphere.setFrame({ ...(head ? emblemCentre(head) : { x: 36, y: 36 }), size: EMBLEM });
     }
     sphere.setLeanTarget(0, 0);
     document.body.style.overflow = "hidden";

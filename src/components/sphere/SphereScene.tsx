@@ -148,7 +148,7 @@ function ContextGuard({ onLost, onRestored }: { onLost: () => void; onRestored: 
  * Readiness + live stats for the harness and the panel. Flips `visible` (and the store's `ready`, which starts the
  * intro) only once the hologram is built and two frames of it have rendered, so the poster stays up until then.
  */
-function Telemetry({ tier, built, onReady }: { tier: Tier; built: HologramStats | null; onReady: () => void }) {
+function Telemetry({ tier, built, frameCap, onReady }: { tier: Tier; built: HologramStats | null; frameCap: { readonly current: number }; onReady: () => void }) {
   const gl = useThree((s) => s.gl);
   const frames = useRef(0);
   const acc = useRef(0);
@@ -180,6 +180,8 @@ function Telemetry({ tier, built, onReady }: { tier: Tier; built: HologramStats 
         triangles: gl.info.render.triangles,
         points: gl.info.render.points,
         dpr: gl.getPixelRatio(),
+        // the browser's idle frame-rate cap (0 = not measured), which sets the performance monitor's decline bound
+        frameCap: Math.round(frameCap.current),
         hologram: built,
       };
     }
@@ -195,6 +197,52 @@ function Caption({ tier, built }: { tier: Tier; built: HologramStats | null }) {
       hologram · tier {tier} · {built ? `${built.vertices.toLocaleString()} vertices · build ${built.buildMs} ms (${built.where})` : "building"} · {fps} fps
     </div>
   );
+}
+
+/** idle frame intervals the cap estimate needs, and the most it keeps (~0.35 s and ~2 s at 30 fps) */
+const CAP_MIN_INTERVALS = 10;
+const CAP_MAX_INTERVALS = 60;
+
+/**
+ * Measures the browser's own frame-rate cap while `active` (the render loop is off, so the GPU is idle) with an empty
+ * rAF loop. iOS Low Power Mode, Chrome's Energy Saver and Safari on a Mac in Low Power Mode cap rAF at 30 fps; a normal
+ * display reads 60 / 120. Main-thread stalls (canvas creation, shader compile) only lengthen some intervals, so the
+ * cap is read from the shorter ones (the 25th percentile). Returns a ref holding the cap in fps (0 until enough
+ * intervals were timed) and the performance monitor's bounds.
+ */
+function useFrameCap(active: boolean) {
+  const cap = useRef(0);
+  const intervals = useRef<number[]>([]);
+  useEffect(() => {
+    const iv = intervals.current;
+    if (!active || iv.length >= CAP_MAX_INTERVALS) return;
+    let raf = 0;
+    let last = -1;
+    const tick = (t: number) => {
+      if (last >= 0) iv.push(t - last);
+      last = t;
+      if (iv.length >= CAP_MIN_INTERVALS) {
+        const sorted = [...iv].sort((a, b) => a - b);
+        cap.current = 1000 / Math.max(1, sorted[Math.floor(sorted.length / 4)]);
+      }
+      if (iv.length < CAP_MAX_INTERVALS) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [active]);
+  // The decline bound is relative to the browser's frame-rate cap: a phone in Low Power Mode delivers a steady 30 fps
+  // with the GPU half idle, and a fixed 40 fps bound would read that as struggling and blur the head (DPR 1.25 -> 1).
+  // Frame timing alone cannot tell that cap from a GPU that vsync-quantises to a steady 30 on a 60 Hz display, so the
+  // cap is measured while nothing renders and declines fire below 80% of it (24 fps under a 30 cap). A 60 / 120 Hz
+  // browser, or an unmeasured cap, keeps the 40 fps bound; frames above 50 under load (drei's `refreshrate`, the
+  // fastest window so far) also prove there is no 30 cap. The bound never drops below 24, so a probe misread by heavy
+  // stalls cannot shield a device that really struggles. Incline also counts toward the monitor's flip-flops, so only
+  // declines may ever fire.
+  const bounds = useCallback((refreshrate: number): [number, number] => {
+    const limit = cap.current > 0 && refreshrate < 50 ? cap.current : Number.POSITIVE_INFINITY;
+    return [Math.min(40, Math.max(24, 0.8 * limit)), Number.POSITIVE_INFINITY];
+  }, []);
+  return { cap, bounds };
 }
 
 const TONES: ToneMode[] = ["none", "aces", "agx", "neutral"];
@@ -306,8 +354,9 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
   const ssDpr = Math.min(budget.dpr[1], budgetDpr) * dprScale;
   const supersample = tier !== "low" && dpr < 1.5 && !ssOff && ssDpr >= dpr * 1.25 ? ssDpr : 0;
   const pitchDpr = Math.min(dpr, maxDpr);
-  // incline also counts toward the monitor's flip-flops, so only declines may ever fire
-  const monitorBounds = useCallback((): [number, number] => [40, Number.POSITIVE_INFINITY], []);
+  // declines are judged against the browser's idle frame-rate cap (iOS Low Power Mode: 30 fps), measured until the
+  // monitor starts
+  const { cap: frameCap, bounds: monitorBounds } = useFrameCap(frameloop === "never" && !monitor);
 
   return (
     <div
@@ -353,7 +402,7 @@ export default function SphereScene({ tier: initialTier, coarsePointer, dpr, deb
             </SphereRig>
             <Effects look={look} budget={budget} />
           </Suspense>
-          <Telemetry tier={tier} built={built} onReady={onReady} />
+          <Telemetry tier={tier} built={built} frameCap={frameCap} onReady={onReady} />
           <VisibilityGate enabled={visible} onChange={onInView} />
           <Warmup onWarm={onWarm} />
         </Canvas>

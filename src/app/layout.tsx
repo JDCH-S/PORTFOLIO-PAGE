@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Chakra_Petch, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { profile } from "@/content/content";
+import { SITE_URL } from "@/lib/site";
 
 const chakra = Chakra_Petch({
   variable: "--font-chakra",
@@ -19,9 +20,31 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const title = `${profile.name} — ${profile.role}`;
+
+// The share image and the icons are files in this folder (opengraph-image.jpg + .alt.txt, favicon.ico,
+// icon.png, apple-icon.png, made by scripts/meta/make_meta_images.py): Next adds their tags itself,
+// and twitter:image inherits the Open Graph image.
 export const metadata: Metadata = {
-  title: `${profile.name} — ${profile.role}`,
+  metadataBase: SITE_URL,
+  title,
   description: profile.tagline,
+  applicationName: profile.name,
+  authors: [{ name: profile.name }],
+  // (the canonical URL is set on the home page itself, not here: every route inherits the layout's metadata, and a
+  // canonical of "/" here would point 404s and any later page at the home page)
+  openGraph: {
+    type: "website",
+    siteName: profile.name,
+    title,
+    description: profile.tagline,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description: profile.tagline,
+  },
 };
 
 export const viewport: Viewport = {

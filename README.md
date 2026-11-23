@@ -10,7 +10,7 @@ Stack: Next.js (App Router) · TypeScript · Tailwind · React Three Fiber + dre
 ## Status
 
 - **Phase 1 — the centrepiece**: the original golden sphere has been replaced by the face hologram
-  (`src/components/hologram`). It is available on its own at `/sphere` with the tweak panel.
+  (`src/components/hologram`). It is available on its own at `/sphere?debug` with the tweak panel.
 - **Phase 2 — blueprint**: `docs/BLUEPRINT.md` (tokens, type, layouts, components, content schema,
   load sequence, interactions).
 - **Phase 3 — the site**: built at `/`: load sequence, HUD, the three modules, beams, detail view,
@@ -34,10 +34,12 @@ npm run dev        # http://localhost:3000
 npm run build && npm start
 ```
 
-Useful query parameters while reviewing (they work on `/` and `/sphere`):
+Useful query parameters while reviewing (they work on `/` and `/sphere`; `/sphere` itself is a 404
+unless one of them, or `?debug`, is in the URL, see below):
 
 | Query | Effect |
 |---|---|
+| `/sphere?debug` | the hologram alone with the tweak panel |
 | `?tier=high` / `medium` / `low` | force a quality tier (default: detected from the device) |
 | `?tier=static` | show the static poster fallback (what reduced-motion / no-WebGL users get) |
 | `?t=8` | start the animation clocks at 8 s (handy for screenshots) |
@@ -73,7 +75,24 @@ Useful query parameters while reviewing (they work on `/` and `/sphere`):
 - `components/modules/*` render the three modules from `content.ts`; `ItemButton` handles hover,
   focus and the click that fires the fragment stream and opens `components/detail/DetailView`.
 
-## The tweak panel (`/sphere`)
+## Deploying: link preview, icons, robots
+
+- **Site URL**: absolute URLs (Open Graph, canonical, robots.txt, sitemap) come from `src/lib/site.ts`:
+  `NEXT_PUBLIC_SITE_URL` if set, else Vercel's `VERCEL_PROJECT_PRODUCTION_URL` (the `*.vercel.app`
+  domain, and the custom domain once one is added, from the next deployment on), else localhost.
+  Nothing to set on Vercel; set `NEXT_PUBLIC_SITE_URL` when hosting elsewhere.
+- **Link preview and icons** are files in `src/app` that Next turns into the head tags:
+  `opengraph-image.jpg` (1200x630, + `.alt.txt`; X's card inherits it), `favicon.ico` (16/32/48, a
+  gold "JD" monogram, the 16 px one drawn on the pixel grid), `icon.png` (192) and `apple-icon.png`
+  (180, the gold head). They are generated from the poster and `profile` in `content.ts` by
+  `python scripts/meta/make_meta_images.py` (Pillow + numpy; deterministic; fetches the two fonts
+  once). Rerun it after recapturing the poster or changing the name or role, and commit the output.
+- **`/sphere`** (the developer page) is a 404 unless the URL carries one of `debug`, `capture`,
+  `freeze`, `tier`, `t` or a `holo.*` override; with one it renders, `noindex`. `robots.txt`
+  allows everything (a `Disallow: /sphere` would also block the `/sphere-static*.webp` posters, and
+  crawlers must reach the page to see its 404 / `noindex`); `sitemap.xml` lists only `/`.
+
+## The tweak panel (`/sphere?debug`)
 
 Every control maps to a value in `src/components/sphere/config.ts` (`DEFAULT_LOOK`), and all of
 them are live: hologram brightness, halo and network nodes, idle sway, breathing and cursor lean,
@@ -155,7 +174,8 @@ worker. **copy settings JSON** puts the current values on the clipboard.
   blended with `screen`) until the head is built and rendering, for `prefers-reduced-motion`, and
   when WebGL2 is unavailable or the maps fail to load. Recapture the poster after any change to the
   head: `/sphere?capture&freeze&t=4&tier=high` at 1200x1200 on a pure black page, and
-  `sphere-static-600.webp` as a Lanczos downsample of it.
+  `sphere-static-600.webp` as a Lanczos downsample of it (then rerun `scripts/meta/make_meta_images.py`
+  for the link preview and the home-screen icon).
 - `SphereScene.tsx` compiles the shaders and waits for the built head before starting the render
   loop (frames rendered into the hidden canvas while the worker builds only queue GPU work: on
   software GL that stalled the first head frame by 13-50 s), flips readiness (which
